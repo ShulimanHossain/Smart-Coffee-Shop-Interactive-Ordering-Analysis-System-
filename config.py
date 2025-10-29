@@ -1,6 +1,6 @@
 class Config:
-           MYSQL_HOST = "Host" 
-           MYSQL_PORT = 0 #Port      
-           MYSQL_USER = "User name"            
-           MYSQL_PASSWORD = "User password"     
-           MYSQL_DB = "bookstore_online" 
+           MYSQL_HOST = "127.0.0.1" 
+           MYSQL_PORT = 3306       
+           MYSQL_USER = "root"            
+           MYSQL_PASSWORD = "shuliman"     
+           MYSQL_DB = "Cafe" 
