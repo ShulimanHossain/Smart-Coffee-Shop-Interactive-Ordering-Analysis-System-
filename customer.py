@@ -13,13 +13,25 @@ def home():
     return render_template('customer.html')  
 
 @app.route('/api/menu',methods=['GET'])
-def get_menu():
+def get_menu(): 
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute("SELECT item_id, name, price FROM menu")
     menu=cursor.fetchall()
     cursor.close()
     return jsonify(menu)
-
+                    
+@app.route('/api/table_status/<int:table_no>', methods=['GET'])
+def table_status(table_no):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    try:
+        cursor.execute("SELECT status FROM tables WHERE table_no=%s", (table_no,))
+        table = cursor.fetchone()
+        if not table:
+            return jsonify({'error': 'Table not found'}), 404
+        return jsonify({'status': table['status']})         
+    finally:
+        cursor.close()
+        
 @app.route('/api/place_order',methods=['POST'])
 def place_order():
     order=request.json

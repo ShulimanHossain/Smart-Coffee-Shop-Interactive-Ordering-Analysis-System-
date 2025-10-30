@@ -24,7 +24,6 @@ CREATE TABLE  menu (
     price DECIMAL(10,2) NOT NULL
 );
 
-
 CREATE TABLE  item_ingredients (
     id INT AUTO_INCREMENT PRIMARY KEY,
     item_id INT NOT NULL,
@@ -33,6 +32,7 @@ CREATE TABLE  item_ingredients (
     FOREIGN KEY (item_id) REFERENCES menu(item_id) ON DELETE CASCADE,
     FOREIGN KEY (ing_id) REFERENCES ingredients(ing_id) ON DELETE CASCADE
 );
+
 CREATE TABLE tables(
     table_no INT PRIMARY KEY,
     status ENUM('Booked','Free') DEFAULT 'Free'

@@ -5,13 +5,14 @@
   <title>Café Order System</title>
   <!-- Bootstrap CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <!-- Icons -->
+  <!-- Bootstrap Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
   <style>
     body { background-color: #f8f9fa; }
     .card { margin-bottom: 15px; }
     #order-summary { margin-top: 20px; }
     .btn-add { margin-top: 10px; }
+    #table-status { margin-bottom: 15px; }
   </style>
 </head>
 <body>
@@ -20,8 +21,9 @@
 
   <div class="mb-3">
     <label class="form-label">Table Number:</label>
-    <input type="number" id="table_number" class="form-control w-25" placeholder="Enter table number">
+    <input type="number" min="1" id="table_number" class="form-control w-25" placeholder="Enter table number" oninput="checkTableStatus()">
   </div>
+  <div id="table-status"></div>
 
   <div id="items-container"></div>
 
@@ -38,116 +40,149 @@
 </div>
 
 <script>
-  let menuItems = [];
+let menuItems = [];
 
-  // Fetch menu from API
-  fetch('/api/menu')
-    .then(res => res.json())
-    .then(data => { menuItems = data; })
-    .catch(err => console.error('Error fetching menu:', err));
+// Fetch menu from API
+fetch('/api/menu')
+  .then(res => res.json())
+  .then(data => { menuItems = data; })
+  .catch(err => console.error('Error fetching menu:', err));
 
-  let itemCount = 0;
+let itemCount = 0;
 
-  function addItemCard() {
-    itemCount++;
-    const div = document.createElement('div');
-    div.className = 'card p-3';
-    div.id = `item-${itemCount}`;
-    div.innerHTML = `
-      <div class="row">
-        <div class="col-md-6 mb-2">
-          <label>Item:</label>
-          <select class="form-select item-select" onchange="updateSummary()">
-            <option value="">Select an item</option>
-            ${menuItems.map(item => `<option value="${item.item_id}" data-price="${item.price}">${item.name} ($${item.price})</option>`).join('')}
-          </select>
-        </div>
-        <div class="col-md-3 mb-2">
-          <label>Quantity:</label>
-          <input type="number" class="form-control quantity-input" value="1" min="1" onchange="updateSummary()">
-        </div>
-        <div class="col-md-3 d-flex align-items-end">
-          <button class="btn btn-danger w-100" onclick="removeItem(${itemCount})"><i class="bi bi-trash-fill"></i> Remove</button>
-        </div>
+function addItemCard() {
+  itemCount++;
+  const div = document.createElement('div');
+  div.className = 'card p-3';
+  div.id = `item-${itemCount}`;
+  div.innerHTML = `
+    <div class="row">
+      <div class="col-md-6 mb-2">
+        <label>Item:</label>
+        <select class="form-select item-select" onchange="updateSummary()">
+          <option value="">Select an item</option>
+          ${menuItems.map(item => `<option value="${item.item_id}" data-price="${item.price}">${item.name} ($${item.price})</option>`).join('')}
+        </select>
       </div>
-    `;
-    document.getElementById('items-container').appendChild(div);
-    updateSummary();
+      <div class="col-md-3 mb-2">
+        <label>Quantity:</label>
+        <input type="number" class="form-control quantity-input" value="1" min="1" onchange="updateSummary()">
+      </div>
+      <div class="col-md-3 d-flex align-items-end">
+        <button class="btn btn-danger w-100" onclick="removeItem(${itemCount})"><i class="bi bi-trash-fill"></i> Remove</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('items-container').appendChild(div);
+  updateSummary();
+}
+
+function removeItem(id) {
+  const div = document.getElementById(`item-${id}`);
+  div.remove();
+  updateSummary();
+}
+
+function updateSummary() {
+  const summaryList = document.getElementById('summary-list');
+  summaryList.innerHTML = '';
+  let total = 0;
+
+  document.querySelectorAll('.card').forEach(card => {
+    const select = card.querySelector('.item-select');
+    const qtyInput = card.querySelector('.quantity-input');
+    const itemId = select.value;
+    const quantity = parseInt(qtyInput.value) || 0;
+    const price = parseFloat(select.selectedOptions[0]?.dataset.price) || 0;
+
+    if(itemId) {
+      total += price * quantity;
+      summaryList.innerHTML += `
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          <i class="bi bi-cup-fill me-2"></i>
+          ${select.selectedOptions[0].text.split(' ($')[0]} x ${quantity}
+          <span>$${(price*quantity).toFixed(2)}</span>
+        </li>`;
+    }
+  });
+
+  document.getElementById('total-price').textContent = total.toFixed(2);
+}
+
+// Check table availability
+async function checkTableStatus() {
+  const tableNumber = parseInt(document.getElementById('table_number').value);
+  const statusEl = document.getElementById('table-status');
+  if(!tableNumber) {
+    statusEl.innerHTML = '';
+    return;
+  }
+  try {
+    const res = await fetch(`/api/table_status/${tableNumber}`);
+    const data = await res.json();
+    if(data.status === 'free') {
+      statusEl.innerHTML = `<span class="badge bg-success">Table Free</span>`;
+    } else if(data.status === 'occupied') {
+      statusEl.innerHTML = `<span class="badge bg-danger">Occupied</span>`;
+    } else if(data.status === 'waiting_payment') {
+      statusEl.innerHTML = `<span class="badge bg-warning text-dark">Waiting Payment</span>`;
+    }
+  } catch(err) {
+    statusEl.innerHTML = `<span class="text-danger">Error fetching table status</span>`;
+    console.error(err);
+  }
+}
+
+// Place order
+async function placeOrder() {
+  const tableNumber = parseInt(document.getElementById('table_number').value);
+  if(!tableNumber) {
+    alert('Please enter a valid table number');
+    return;
   }
 
-  function removeItem(id) {
-    const div = document.getElementById(`item-${id}`);
-    div.remove();
-    updateSummary();
+  const order_items = [];
+  document.querySelectorAll('.card').forEach(card => {
+    const select = card.querySelector('.item-select');
+    const qtyInput = card.querySelector('.quantity-input');
+    const itemId = parseInt(select.value);
+    const quantity = parseInt(qtyInput.value);
+    if(itemId && quantity > 0) {
+      order_items.push({ item_id: itemId, quantity: quantity });
+    }
+  });
+
+  if(order_items.length === 0) {
+    alert('Please add at least one item');
+    return;
   }
 
-  function updateSummary() {
-    const summaryList = document.getElementById('summary-list');
-    summaryList.innerHTML = '';
-    let total = 0;
+  const responseEl = document.getElementById('response');
+  responseEl.textContent = '';
 
-    document.querySelectorAll('.card').forEach(card => {
-      const select = card.querySelector('.item-select');
-      const qtyInput = card.querySelector('.quantity-input');
-      const itemId = select.value;
-      const quantity = parseInt(qtyInput.value) || 0;
-      const price = parseFloat(select.selectedOptions[0]?.dataset.price) || 0;
-
-      if(itemId) {
-        total += price * quantity;
-        summaryList.innerHTML += `<li class="list-group-item">${select.selectedOptions[0].text} x ${quantity} = $${(price*quantity).toFixed(2)}</li>`;
-      }
+  try {
+    const res = await fetch('/api/place_order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ table_number: tableNumber, order_item: order_items })
     });
 
-    document.getElementById('total-price').textContent = total.toFixed(2);
+    const data = await res.json();
+    if(res.ok) {
+      alert(`Order Placed! Order ID: ${data.order_id}`);
+      // Reset form
+      document.getElementById('items-container').innerHTML = '';
+      document.getElementById('summary-list').innerHTML = '';
+      document.getElementById('total-price').textContent = '0.00';
+      document.getElementById('table_number').value = '';
+      document.getElementById('table-status').innerHTML = '';
+    } else {
+      responseEl.textContent = 'Error: ' + data.error;
+    }
+  } catch (err) {
+    responseEl.textContent = 'Error: ' + err.message;
   }
-
-  async function placeOrder() {
-    const tableNumber = parseInt(document.getElementById('table_number').value);
-    if(!tableNumber) {
-      alert('Please enter a table number');
-      return;
-    }
-
-    const order_items = [];
-    document.querySelectorAll('.card').forEach(card => {
-      const select = card.querySelector('.item-select');
-      const qtyInput = card.querySelector('.quantity-input');
-      const itemId = parseInt(select.value);
-      const quantity = parseInt(qtyInput.value);
-      if(itemId && quantity > 0) {
-        order_items.push({ item_id: itemId, quantity: quantity });
-      }
-    });
-
-    if(order_items.length === 0) {
-      alert('Please add at least one item');
-      return;
-    }
-
-    const responseEl = document.getElementById('response');
-    responseEl.textContent = '';
-
-    try {
-      const res = await fetch('/api/place_order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ table_number: tableNumber, order_item: order_items })
-      });
-
-      const data = await res.json();
-      if(res.ok) {
-        alert(`Order Placed! Order ID: ${data.order_id}`);
-        // Reset form
-        document.getElementById('items-container').innerHTML = '';
-        document.getElementById('summary-list').innerHTML = '';
-        document.getElementById('total-price').textContent = '0.00';
-        document.getElementById('table_number').value = '';
-      } else {
-        responseEl.textContent = 'Error: ' + data.error;
-      }
-    } catch (err) {
-      responseEl.textContent = 'Error: ' + err.message;
-    }
-  }
+}
 </script>
+</body>
+</html>

@@ -9,6 +9,30 @@ app.secret_key='my_key_374'
 mysql=MySQL (app)
 
 
+@app.route('/login',methods=['GET','POST'])
+def login():
+    if request.method=='POST':
+        userid=request.form['admin_id']
+        password=request.form['password']
+    cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    admin=cursor.fetchone()
+    if not admin :
+        return render_template('login.html', message="Admin not found")
+    if password== admin[password]:
+        return redirect(url_for('admin_dashboard',admin_id=userid))
+    else :
+        return render_template('login.html',message="Invalid password")
+
+
+
+@app.route('/api/admin/order',methods=['GET'])
+def view_order():
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute("SELECT * FROM Orders WHERE status='active' ")
+    orders=cursor.fetchall()
+    cursor.close()
+    return jsonify(orders)
+
 
 
 @app.route('/admin/confirm_payment/<int:order_id>', methods=['POST'])
