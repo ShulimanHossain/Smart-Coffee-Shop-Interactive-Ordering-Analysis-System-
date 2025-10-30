@@ -1,6 +1,16 @@
 CREATE DATABASE Cafe;
 USE cafe;
 
+
+CREATE TABLE Admin(
+    admin_id INT AUTO_INCREMENT PRIMARY KEY,
+    admin_name VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    admin_password VARCHAR(255) NOT NULL,
+    phone_number VARCHAR(20)
+);
+
+
 CREATE TABLE ingredients(
     ing_id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
@@ -14,6 +24,7 @@ CREATE TABLE  menu (
     price DECIMAL(10,2) NOT NULL
 );
 
+
 CREATE TABLE  item_ingredients (
     id INT AUTO_INCREMENT PRIMARY KEY,
     item_id INT NOT NULL,
@@ -21,6 +32,29 @@ CREATE TABLE  item_ingredients (
     quantity_needed DECIMAL(10,2) NOT NULL, 
     FOREIGN KEY (item_id) REFERENCES menu(item_id) ON DELETE CASCADE,
     FOREIGN KEY (ing_id) REFERENCES ingredients(ing_id) ON DELETE CASCADE
+);
+CREATE TABLE tables(
+    table_no INT PRIMARY KEY,
+    status ENUM('Booked','Free') DEFAULT 'Free'
+);
+
+
+CREATE TABLE Orders(
+    order_id INT AUTO_INCREMENT PRIMARY KEY,
+    table_no INT NOT NULL,
+    total_bill DECIMAL(10,2) NOT NULL,
+    status ENUM('active','completed','cancle') DEFAULT 'active'
+    order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (table_no) REFERENCES tables(table_no)
+);
+
+CREATE TABLE Order_details(
+    order_details_id INT AUTO_INCREMENT PRIMARY KEY,
+    order_id INT NOT NULL,
+    item_id INT NOT NULL,
+    quantity INT NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES Orders(order_id) ON DELETE CASCADE,
+    FOREIGN KEY (item_id) REFERENCES Menu(item_id) ON DELETE CASCADE
 );
 
 INSERT INTO ingredients (name, quantity, unit) VALUES

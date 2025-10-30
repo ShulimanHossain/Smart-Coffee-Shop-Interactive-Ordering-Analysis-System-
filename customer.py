@@ -10,7 +10,7 @@ mysql=MySQL (app)
 
 @app.route('/')
 def home():
-    return render_template('customer.html')  # <-- Flask will look in templates/index.html
+    return render_template('customer.html')  
 
 @app.route('/api/menu',methods=['GET'])
 def get_menu():
@@ -25,10 +25,21 @@ def place_order():
     order=request.json
     table_no=order.get("table_number")
     order_item=order.get("order_item",[])
+
     if not table_no or not order_item:
         return jsonify({'error': 'Missing table number or items'}), 400
+    
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    try:
+    try: 
+        cursor.execute("SELECT status FROM  tables WHERE table_no=%s",(table_no))
+        table=cursor.fetchone()
+        if not table:
+            return jsonify({"error":" Invalid table number" })
+        if table ['status']!='Free':
+             return jsonify({"error":f"Table{table_no} is already {table['status']}"})
+        
+        cursor.execute("UPDATE tables SRT status=%s WHERE table_no=%s", ("Not Free",table_no))
+
         total_price=0
 
         for item in order_item:
@@ -46,12 +57,12 @@ def place_order():
                     return jsonify({'error': f"Not enough {ing['name']} for item {item['item_id']}"}), 400
                 
         for item in order_item:
-            # Get item price
+            
             cursor.execute("SELECT price FROM menu WHERE item_id=%s", (item['item_id'],))
             result = cursor.fetchone()
             total_price += result['price'] * item['quantity']
 
-            # Deduct ingredients
+            
             cursor.execute("""
                 SELECT ingd.ing_id, ingd.quantity AS stock, r.quantity_needed
                 FROM item_ingredients r
