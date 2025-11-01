@@ -16,10 +16,12 @@ def login():
         userid=request.form['admin_id']
         password=request.form['password']
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute("SELECT password FROM admin WHERE admin_id=%s",(userid,))
     admin=cursor.fetchone()
     if not admin :
         return render_template('login.html', message="Admin not found")
     if password== admin[password]:
+        session['admin_id']=userid
         return redirect(url_for('admin_dashboard',admin_id=userid))
     else :
         return render_template('login.html',message="Invalid password")
@@ -33,7 +35,7 @@ def admin_dashboard(admin_id):
     active_order =cursor.fetchall()
     return render_template('admin_dashboard.html',admin_id=admin_id,tables=table,active_order=active_order)
 
-@app.route('/admin<int:admin_id>/menu')
+@app.route('/admin/<int:admin_id>/menu')
 def view_menu(admin_id):
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute("SELECT * FROM Menu")
@@ -61,7 +63,6 @@ def add_item(admin_id):
         if result:
             ing_id = result['ing_id']
         else:
-           
             cursor.execute("INSERT INTO ingredients (name, stock) VALUES (%s, %s)", (ing_name, 0))
             mysql.connection.commit()
             ing_id = cursor.lastrowid
@@ -71,30 +72,29 @@ def add_item(admin_id):
         mysql.connection.commit()
         message="Item added successfully"
     
-    return redirect(url_for('admin_dashboard.html',action='add_item',message=message, admin_id=admin_id))
+    return redirect(url_for('admin_dashboard',action='add_item',message=message, admin_id=admin_id))
 
 
-@app.route('/admin/<int:admin_id>/menu/delete_menu/<int:item_id>',methods=['POST','GET'])
-def delete_menu(admin_id,item_id):
+@app.route('/admin/menu/delete_menu',methods=['POST','GET'])
+def delete_menu():
+    message=''
+    cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     if request.method=='POST':
-        message=''
         item_id=request.form['item_id']
-        cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         try:
             cursor.execute('DELETE FROM menu WHERE item_id=%s',(item_id,))
             mysql.connection.commit()
             message="Item deleted successfully"
         except Exception as e:
             mysql.connection.rollback()
-            print("Error deleting:", e)
-    cursor.execute("SELECT item_id,name FROM Menu")
+            message="Error deleting item"
+    cursor.execute("SELECT item_id,name FROM menu")
     menu=cursor.fetchall()
     cursor.close()
-    return render_template('delete_menu.html',action='delete_menu',message=message)
+    return render_template('delete_menu.html',action='delete_menu',menu=menu,message=message)
 
-@app.route('/admin/menu/change_price/<int:item_id>',methods=['POST','GET'])
+@app.route('/admin/menu/change_price',methods=['POST','GET'])
 def change_price():
-    
     message=''
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     
@@ -121,7 +121,7 @@ def updatestock():
            new_quantity=request.form['new_quantity']
            cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
            try: 
-            cursor.execute("UPDATE Ingredients SET quantity=%s WHERE  ing_id=%s",(new_quantity,ing_id))
+            cursor.execute("UPDATE ingredients SET quantity=%s WHERE  ing_id=%s",(new_quantity,ing_id))
             mysql.connection.commit()
             message="successfully update stock"
            except Exception as e:
@@ -132,14 +132,13 @@ def updatestock():
       cursor.close()
       return render_template('update_stock.html',action='updatestock',ingredients=ingredients,message=message)
 
-@app.route('/api/admin/order',methods=['GET'])
+@app.route('/admin/order',methods=['GET'])
 def view_order():
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute("SELECT * FROM Orders WHERE status='active' ")
     orders=cursor.fetchall()
     cursor.close()
     return jsonify(orders)
-
 
 
 @app.route('/admin/confirm_payment/<int:order_id>', methods=['POST'])
@@ -152,8 +151,6 @@ def confirm_payment(order_id):
             return jsonify({'error': 'Invalid order ID'}), 404
 
         table_no = order['table_no']
-
-       
         cursor.execute("UPDATE orders SET status='completed' WHERE order_id=%s", (order_id,))
         cursor.execute("UPDATE tables SET status='free' WHERE table_no=%s", (table_no,))
         mysql.connection.commit()
@@ -163,3 +160,11 @@ def confirm_payment(order_id):
         return jsonify({'error': str(e)}), 500
     finally:
         cursor.close()
+
+@app.route('/logout')
+def logout(): 
+    session.clear()
+    return redirect(url_for('login'))
+
+if __name__ == "__main__":
+    app.run(debug=True)

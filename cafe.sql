@@ -1,16 +1,6 @@
 CREATE DATABASE Cafe;
 USE cafe;
 
-
-CREATE TABLE Admin(
-    admin_id INT AUTO_INCREMENT PRIMARY KEY,
-    admin_name VARCHAR(50) UNIQUE NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,
-    admin_password VARCHAR(255) NOT NULL,
-    phone_number VARCHAR(20)
-);
-
-
 CREATE TABLE ingredients(
     ing_id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
@@ -33,19 +23,19 @@ CREATE TABLE  item_ingredients (
     FOREIGN KEY (ing_id) REFERENCES ingredients(ing_id) ON DELETE CASCADE
 );
 
-CREATE TABLE tables(
+CREATE TABLE cafe_tables(
     table_no INT PRIMARY KEY,
     status ENUM('Booked','Free') DEFAULT 'Free'
 );
-
+SELECT * FROM Orders;
 
 CREATE TABLE Orders(
     order_id INT AUTO_INCREMENT PRIMARY KEY,
     table_no INT NOT NULL,
     total_bill DECIMAL(10,2) NOT NULL,
-    status ENUM('active','completed','cancle') DEFAULT 'active'
+    status ENUM('active','completed','cancle') DEFAULT 'active',
     order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (table_no) REFERENCES tables(table_no)
+    FOREIGN KEY (table_no) REFERENCES cafe_tables(table_no)
 );
 
 CREATE TABLE Order_details(
@@ -56,7 +46,6 @@ CREATE TABLE Order_details(
     FOREIGN KEY (order_id) REFERENCES Orders(order_id) ON DELETE CASCADE,
     FOREIGN KEY (item_id) REFERENCES Menu(item_id) ON DELETE CASCADE
 );
-
 INSERT INTO ingredients (name, quantity, unit) VALUES
 ('Coffee Beans', 1000, 'g'),
 ('Milk', 5000, 'ml'),
@@ -83,3 +72,26 @@ INSERT INTO item_ingredients (item_id, ing_id, quantity_needed) VALUES
 (4, 3, 50),        -- Mocha -> Chocolate Syrup 50ml
 (5, 4, 5),         -- Tea -> Tea Leaves 5g
 (5, 5, 10);
+
+INSERT INTO Order_details (order_id, item_id, quantity) VALUES
+(11, 1, 2),
+(11, 3, 1),
+(12, 2, 1),
+(13, 4, 2),
+(15, 5, 3);
+
+
+INSERT INTO Orders (table_no, total_bill, status) VALUES
+(1, 450.00, 'completed'),
+(2, 320.50, 'active'),
+(3, 250.00, 'completed'),
+(4, 180.75, 'cancle'),
+(5, 600.00, 'active');
+INSERT INTO cafe_tables (table_no, status) VALUES
+(1, 'Free'),
+(2, 'Booked'),
+(3, 'Free'),
+(4, 'Booked'),
+(5, 'Free');
+
+SHOW TABLES FROM Cafe;

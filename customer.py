@@ -1,4 +1,4 @@
-from flask import Flask, render_template,request,redirect,url_for,jsonify,session
+from flask import Flask, render_template,request,redirect,url_for,jsonify,session,json
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
 from config import Config
@@ -10,102 +10,95 @@ mysql=MySQL (app)
 
 @app.route('/')
 def home():
-    return render_template('customer.html')  
-
-@app.route('/api/menu',methods=['GET'])
-def get_menu(): 
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute("SELECT item_id, name, price FROM menu")
-    menu=cursor.fetchall()
+    menu=cursor.fetchall() 
+    cursor.execute("SELECT table_no, status FROM cafe_tables")
+    tables = cursor.fetchall()
     cursor.close()
-    return jsonify(menu)
-                    
-@app.route('/api/table_status/<int:table_no>', methods=['GET'])
-def table_status(table_no):
+    return render_template('customer/customer.html',menu=menu,tables=tables)  
+      
+@app.route('/tables')
+def view_tables():
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    try:
-        cursor.execute("SELECT status FROM tables WHERE table_no=%s", (table_no,))
-        table = cursor.fetchone()
-        if not table:
-            return jsonify({'error': 'Table not found'}), 404
-        return jsonify({'status': table['status']})         
-    finally:
-        cursor.close()
-        
-@app.route('/api/place_order',methods=['POST'])
+    cursor.execute("SELECT * FROM cafe_tables")
+    tables = cursor.fetchall()
+    cursor.close()
+    return render_template('tables.html', tables=tables)
+
+@app.route('/place_order', methods=['POST'])
 def place_order():
-    order=request.json
-    table_no=order.get("table_number")
-    order_item=order.get("order_item",[])
+    table_no= request.form.get('table_no')
+    cart_data=request.form.get('cart_data')
+    cart_items = json.loads(cart_data)
 
-    if not table_no or not order_item:
-        return jsonify({'error': 'Missing table number or items'}), 400
-    
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    try: 
-        cursor.execute("SELECT status FROM  tables WHERE table_no=%s",(table_no))
-        table=cursor.fetchone()
-        if not table:
-            return jsonify({"error":" Invalid table number" })
-        if table ['status']!='Free':
-             return jsonify({"error":f"Table{table_no} is already {table['status']}"})
-        
-        cursor.execute("UPDATE tables SRT status=%s WHERE table_no=%s", ("Not Free",table_no))
-
-        total_price=0
-
-        for item in order_item:
-            cursor.execute("""
-                SELECT ingd.ing_id, ingd.name, ingd.quantity AS stock, r.quantity_needed
-                FROM item_ingredients r
-                JOIN ingredients ingd ON r.ing_id = ingd.ing_id
-                WHERE r.item_id = %s
-            """, (item['item_id'],))
-            ingredients = cursor.fetchall()
-            
-            for ing in ingredients:
-                required = ing['quantity_needed'] * item['quantity']
-                if ing['stock'] < required:
-                    return jsonify({'error': f"Not enough {ing['name']} for item {item['item_id']}"}), 400
-                
-        for item in order_item:
-            
-            cursor.execute("SELECT price FROM menu WHERE item_id=%s", (item['item_id'],))
-            result = cursor.fetchone()
-            total_price += result['price'] * item['quantity']
-
-            
-            cursor.execute("""
-                SELECT ingd.ing_id, ingd.quantity AS stock, r.quantity_needed
-                FROM item_ingredients r
-                JOIN ingredients ingd ON r.ing_id = ingd.ing_id
-                WHERE r.item_id = %s
-            """, (item['item_id'],))
-            ingredients = cursor.fetchall()
-            for ing in ingredients:
-                new_stock = ing['stock'] - ing['quantity_needed'] * item['quantity']
-                cursor.execute("UPDATE ingredients SET quantity=%s WHERE ing_id=%s",
-                               (new_stock, ing['ing_id']))
-                
-        cursor.execute("""
-        INSERT INTO orders (table_no, total_price)
-        VALUES (%s, %s)
-        """, (table_no, total_price))
-        order_id = cursor.lastrowid
-
-        for item in order_item:
-            cursor.execute("""
-                INSERT INTO order_items (order_id, item_id, quantity)
-                VALUES (%s, %s, %s)
-            """, (order_id, item['item_id'], item['quantity']))
-        mysql.connection.commit()
-        return jsonify({'message': 'Order placed successfully', 'order_id': order_id}), 201
-
-    except Exception as e:
-        mysql.connection.rollback()
-        return jsonify({'error': str(e)}), 500
-    finally:
+    cursor.execute("SELECT status FROM cafe_tables WHERE table_no=%s", (table_no,))
+    table = cursor.fetchone()
+    if not table or table['status'] != 'Free':
         cursor.close()
+        return render_template('customer/customer.html', error=f"Table {table_no} not available")
+
+    total_price=0
+    for item in cart_items:
+        item_id = item['item_id']
+        quantity = item['quantity']
+    cursor.execute("""
+        SELECT ingd.ing_id, ingd.quantity AS stock, r.quantity_needed
+        FROM item_ingredients r
+        JOIN ingredients ingd ON r.ing_id = ingd.ing_id
+        WHERE r.item_id=%s
+    """, (item_id,))
+    ingredients = cursor.fetchall()
+    
+    
+    for ing in ingredients:
+        if ing['stock'] < ing['quantity_needed'] * quantity:
+            cursor.close()
+            return render_template('customer/customer.html', error=f"Not enough {ing['name']}")
+
+
+    for ing in ingredients:
+        new_stock = ing['stock'] - ing['quantity_needed'] * quantity
+        cursor.execute("UPDATE ingredients SET quantity=%s WHERE ing_id=%s", (new_stock, ing['ing_id']))
+    
+    cursor.execute("SELECT price, name FROM menu WHERE item_id=%s", (item_id,))
+    menu_item = cursor.fetchone()
+    item['name'] = menu_item['name']  # 🔹 store name for success page
+    price = float(menu_item['price'])
+    subtotal = price * quantity
+    total_price += subtotal
+
+    cursor.execute("INSERT INTO orders (table_no, total_bill, status) VALUES (%s, %s, %s)", 
+                   (table_no, 0, 'active'))
+    order_id = cursor.lastrowid
+
+
+    for item in cart_items:
+        cursor.execute("INSERT INTO order_details (order_id, item_id, quantity) VALUES (%s, %s, %s)", 
+                       (order_id, item['item_id'], item['quantity']))
+
+    mysql.connection.commit()
+    cursor.execute("""
+        SELECT m.name AS item_name, m.price, oi.quantity, (m.price * oi.quantity) AS subtotal
+        FROM order_details oi
+        JOIN menu m ON oi.item_id = m.item_id
+        WHERE oi.order_id = %s
+    """, (order_id,))
+    ordered_items = cursor.fetchall()
+
+    cursor.execute("SELECT total_bill, table_no FROM orders WHERE order_id=%s", (order_id,))
+    order_info = cursor.fetchone()
+    cursor.close()
+
+    return render_template(
+        'customer/order_success.html',
+        order_id=order_id,
+        table_no=order_info['table_no'],
+        total_price=order_info['total_bill'],
+        ordered_items=ordered_items
+    )
+
 
 if __name__ =="__main__":
     app.run(debug=True)
