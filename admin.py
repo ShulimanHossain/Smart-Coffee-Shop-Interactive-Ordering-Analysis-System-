@@ -74,7 +74,7 @@ def add_item(admin_id):
     return redirect(url_for('admin_dashboard.html',action='add_item',message=message, admin_id=admin_id))
 
 
-@app.route('/admin/<int:admin_id>/menu/delete/<int:item_id>',methods=['POST','GET'])
+@app.route('/admin/<int:admin_id>/menu/delete_menu/<int:item_id>',methods=['POST','GET'])
 def delete_menu(admin_id,item_id):
     if request.method=='POST':
         message=''
@@ -83,12 +83,54 @@ def delete_menu(admin_id,item_id):
         try:
             cursor.execute('DELETE FROM menu WHERE item_id=%s',(item_id,))
             mysql.connection.commit()
-            message="Book deleted successfully"
-        finally:
-                cursor.close()
+            message="Item deleted successfully"
+        except Exception as e:
+            mysql.connection.rollback()
+            print("Error deleting:", e)
+    cursor.execute("SELECT item_id,name FROM Menu")
+    menu=cursor.fetchall()
+    cursor.close()
     return render_template('delete_menu.html',action='delete_menu',message=message)
 
+@app.route('/admin/menu/change_price/<int:item_id>',methods=['POST','GET'])
+def change_price():
+    
+    message=''
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    
+    if request.method=='POST':
+           item_id=request.form['item_id']
+           newprice=request.form['newprice']
+           try:
+            cursor.execute('UPDATE menu SET price =%s WHERE item_id=%s ',(newprice,item_id))
+            mysql.connection.commit()
+            message="successfully changed price"
+           except Exception as e:
+            mysql.connection.rollback()
+            print("Error deleting:", e)  
+    cursor.execute("SELECT item_id,name FROM Menu")
+    menu=cursor.fetchall()
+    cursor.close()
+    return render_template('change_price.html',action='change_price',menu=menu,message=message)
 
+@app.route('/admin/updatestock', methods=['GET','POST'])
+def updatestock():
+      message=''
+      if request.method=='POST':
+           ing_id=request.form['ing_id']
+           new_quantity=request.form['new_quantity']
+           cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+           try: 
+            cursor.execute("UPDATE Ingredients SET quantity=%s WHERE  ing_id=%s",(new_quantity,ing_id))
+            mysql.connection.commit()
+            message="successfully update stock"
+           except Exception as e:
+            mysql.connection.rollback()
+            print("Error deleting:", e)  
+      cursor.execute("SELECT ing_id,name, quantity FROM Ingredients")
+      ingredients=cursor.fetchall()
+      cursor.close()
+      return render_template('update_stock.html',action='updatestock',ingredients=ingredients,message=message)
 
 @app.route('/api/admin/order',methods=['GET'])
 def view_order():
