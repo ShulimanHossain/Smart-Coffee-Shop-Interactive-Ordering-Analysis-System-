@@ -64,7 +64,7 @@ def place_order():
     
     cursor.execute("SELECT price, name FROM menu WHERE item_id=%s", (item_id,))
     menu_item = cursor.fetchone()
-    item['name'] = menu_item['name']  # 🔹 store name for success page
+    item['name'] = menu_item['name']  
     price = float(menu_item['price'])
     subtotal = price * quantity
     total_price += subtotal
@@ -98,6 +98,25 @@ def place_order():
         total_price=order_info['total_bill'],
         ordered_items=ordered_items
     )
+
+@app.route('/payment/int<order_id>', methods=['POST','GET'])
+def payment(order_id):
+    cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT * FROM Orders WHERE order_id = %S',(order_id,))
+    order=cursor.fetchone()
+    if not order :
+        return "Order not found"
+    
+    if request.method=="POST":
+       method =request.form.get('payment_method')
+       cursor.execute("UPDATE Orders SET payment_method=%s WHERE order_id=%s",(method,order_id))
+       mysql.connection.commit()
+       cursor.close()
+       msg="Please wait, a waiter will come to receive your payment according to your selecting option"
+       return render_template('payment.html',order=order,payment_done=True,payment_method=method,msg=msg)
+    
+    return render_template('payment.html',order=order,payment_done=False)
+    
 
 
 if __name__ =="__main__":

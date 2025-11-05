@@ -135,32 +135,24 @@ def updatestock():
 @app.route('/admin/order',methods=['GET'])
 def view_order():
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute("SELECT * FROM Orders WHERE status='active' ")
+    cursor.execute("""SELECT  o.*, t.status AS table_status FROM orders o 
+                   JOIN cafe_tables t ON o.table_no = t.table_no  
+                   WHERE o.status='active' 
+                   ORDER BY o.order_date, o.order_time""")
     orders=cursor.fetchall()
     cursor.close()
-    return jsonify(orders)
+    return render_template('view_order.html',orders =orders)
 
 
 @app.route('/admin/confirm_payment/<int:order_id>', methods=['POST'])
 def confirm_payment(order_id):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    try:
-        cursor.execute("SELECT table_no FROM orders WHERE order_id=%s", (order_id,))
-        order = cursor.fetchone()
-        if not order:
-            return jsonify({'error': 'Invalid order ID'}), 404
-
-        table_no = order['table_no']
-        cursor.execute("UPDATE orders SET status='completed' WHERE order_id=%s", (order_id,))
-        cursor.execute("UPDATE tables SET status='free' WHERE table_no=%s", (table_no,))
-        mysql.connection.commit()
-        return jsonify({'message': f'Table {table_no} is now free'}), 200
-    except Exception as e:
-        mysql.connection.rollback()
-        return jsonify({'error': str(e)}), 500
-    finally:
-        cursor.close()
-
+    table=cursor.execute("SELECT table_no FROM Orders WHERE order_id=%s",(order_id,)) 
+    cursor.execute("UPDATE Orders SET status ='completed' WHERE order_id=%s",(order_id,))
+    cursor.execute("UPDATE cafe_tables SET status ='Free' WHERE table_no=%s",(table))
+    mysql.connection.commit()
+    cursor.close()
+    return redirect(url_for('view_order'))
 @app.route('/logout')
 def logout(): 
     session.clear()

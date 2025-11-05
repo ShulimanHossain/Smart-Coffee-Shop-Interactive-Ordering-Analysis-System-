@@ -34,7 +34,9 @@ CREATE TABLE Orders(
     table_no INT NOT NULL,
     total_bill DECIMAL(10,2) NOT NULL,
     status ENUM('active','completed','cancle') DEFAULT 'active',
-    order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    payment_method ENUM ('cash','card') DEFAULT NULL,
+    order_date DATE DEFAULT (CURRENT_DATE),
+    order_time TIME DEFAULT (CURRENT_TIME),
     FOREIGN KEY (table_no) REFERENCES cafe_tables(table_no)
 );
 
