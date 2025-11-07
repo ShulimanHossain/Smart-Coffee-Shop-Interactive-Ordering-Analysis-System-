@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Cafe</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: url("{{ url_for('static', filename='cafe_ml.png') }}") no-repeat center center fixed;
+            background-size: cover;
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+        .overlay {
+            background-color: rgba(255, 255, 255, 0.5);
+            min-height: 100vh;
+            padding: 20px;
+            backdrop-filter: blur(5px);
+        }
+        .hidden { display: none; }
+        .menu-item {
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .menu-item:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+        .cart {
+            background-color: rgba(255, 243, 224, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        .btn-place-order {
+            background-color: #ff7f50;
+            color: white;
+        }
+        .btn-place-order:hover {
+            background-color: #ff5722;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #333;
+            text-shadow: 1px 1px 4px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+
+<div class="overlay container mt-4">
+
+    <!-- 🔹 Navigation Bar -->
+    <nav class="text-center mb-4">
+        <button class="btn btn-outline-dark mx-2" onclick="showSection('home')">Home</button>
+        <button class="btn btn-outline-dark mx-2" onclick="showSection('customer')">Customer Menu</button>
+        <button class="btn btn-outline-dark mx-2" onclick="showSection('success')">Order Summary</button>
+    </nav>
+
+    <!-- 🔹 HOME SECTION -->
+    <section id="home-section">
+        <div class="text-center">
+            <h1>Welcome to Smart Cafe ☕</h1>
+            <p class="lead">Click below to start ordering!</p>
+            <button class="btn btn-primary mt-3" onclick="showSection('customer')">Start Ordering</button>
+        </div>
+    </section>
+
+    <!-- 🔹 CUSTOMER MENU SECTION -->
+    <section id="customer-section" class="hidden">
+        <h1>Menu</h1>
+        <div class="row">
+            <div class="col-md-8">
+                <div class="row g-3">
+                    {% for item in menu %}
+                    <div class="col-md-4">
+                        <div class="card menu-item p-3 text-center" 
+                             data-id="{{ item.item_id }}" 
+                             data-name="{{ item.name }}" 
+                             data-price="{{ item.price }}">
+                            <h5>{{ item.name }}</h5>
+                            <p>${{ item.price }}</p>
+                            <span class="badge bg-success">Click to Add</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="cart">
+                    <h4>Cart</h4>
+                    <label for="table-select">Select Table:</label>
+                    <select id="table-select" class="form-select mb-3">
+                        {% for table in tables %}
+                        <option value="{{ table.table_no }}" {% if table.status != 'Free' %}disabled{% endif %}>
+                            Table {{ table.table_no }} - {{ table.status }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <div id="cart-items"><p class="text-muted">No items added yet</p></div>
+                    <hr>
+                    <p class="cart-total">Total: $<span id="cart-total">0.00</span></p>
+                    <button class="btn btn-place-order w-100 mt-2" onclick="submitOrder()">Place Order</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 🔹 ORDER SUCCESS SECTION -->
+    <section id="success-section" class="hidden">
+        <div class="text-center">
+            <h1 class="text-success">✅ Order Successful!</h1>
+            <p><strong>Order ID:</strong> <span id="success-order-id">{{ order_id }}</span></p>
+            <p><strong>Table No:</strong> <span id="success-table-no">{{ table_no }}</span></p>
+            <table class="table table-bordered mt-3">
+                <thead class="table-primary">
+                    <tr><th>Item</th><th>Price</th><th>Quantity</th><th>Subtotal</th></tr>
+                </thead>
+                <tbody id="success-items">
+                    {% for item in ordered_items %}
+                    <tr>
+                        <td>{{ item.item_name }}</td>
+                        <td>{{ "%.2f"|format(item.price) }}</td>
+                        <td>{{ item.quantity }}</td>
+                        <td>{{ "%.2f"|format(item.subtotal) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <h4>Total: ৳<span id="success-total">{{ "%.2f"|format(total_price) }}</span></h4>
+            <button class="btn btn-primary mt-3" onclick="showSection('home')">Back to Home</button>
+        </div>
+    </section>
+</div>
+
+<script>
+let cart = [];
+
+function showSection(section) {
+    document.getElementById("home-section").classList.add("hidden");
+    document.getElementById("customer-section").classList.add("hidden");
+    document.getElementById("success-section").classList.add("hidden");
+    document.getElementById(section + "-section").classList.remove("hidden");
+}
+
+document.querySelectorAll('.menu-item').forEach(card => {
+    card.addEventListener('click', function() {
+        const id = this.dataset.id;
+        const name = this.dataset.name;
+        const price = parseFloat(this.dataset.price);
+        addToCart(id, name, price);
+    });
+});
+
+function addToCart(itemId, name, price) {
+    const existing = cart.find(i => i.item_id == itemId);
+    if (existing) existing.quantity += 1;
+    else cart.push({item_id: itemId, name: name, price: price, quantity: 1});
+    updateCart();
+}
+
+function updateCart() {
+    const cartItemsDiv = document.getElementById('cart-items');
+    const cartTotalSpan = document.getElementById('cart-total');
+    cartItemsDiv.innerHTML = '';
+    let total = 0;
+
+    cart.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'cart-item d-flex justify-content-between';
+        div.innerHTML = `<span>${item.name} x${item.quantity}</span><span>$${(item.price * item.quantity).toFixed(2)}</span>`;
+        cartItemsDiv.appendChild(div);
+        total += item.price * item.quantity;
+    });
+
+    if (cart.length === 0) cartItemsDiv.innerHTML = '<p class="text-muted">No items added yet</p>';
+    cartTotalSpan.innerText = total.toFixed(2);
+}
+
+function submitOrder() {
+    // Normally you’d send this via Flask route, but here we just show success
+    showSection('success');
+}
+</script>
+
+</body>
+</html>
