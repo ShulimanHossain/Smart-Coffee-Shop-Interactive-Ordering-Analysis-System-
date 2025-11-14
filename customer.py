@@ -35,50 +35,63 @@ def place_order():
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute("SELECT status FROM cafe_tables WHERE table_no=%s", (table_no,))
     table = cursor.fetchone()
+
     if not table or table['status'] != 'Free':
         cursor.close()
         return render_template('customer/customer.html', error=f"Table {table_no} not available")
 
-    total_price=0
+   
+
     for item in cart_items:
         item_id = item['item_id']
         quantity = item['quantity']
-    cursor.execute("""
-        SELECT ingd.ing_id, ingd.quantity AS stock, r.quantity_needed
-        FROM item_ingredients r
-        JOIN ingredients ingd ON r.ing_id = ingd.ing_id
-        WHERE r.item_id=%s
-    """, (item_id,))
-    ingredients = cursor.fetchall()
+        cursor.execute("""
+          SELECT ingd.ing_id, ingd.name, ingd.quantity AS stock, r.quantity_needed
+           FROM item_ingredients r
+           JOIN ingredients ingd ON r.ing_id = ingd.ing_id
+           WHERE r.item_id=%s
+           """, (item_id,))
+        ingredients = cursor.fetchall()
     
     
-    for ing in ingredients:
-        if ing['stock'] < ing['quantity_needed'] * quantity:
-            cursor.close()
-            return render_template('customer/customer.html', error=f"Not enough {ing['name']}")
-
-
-    for ing in ingredients:
-        new_stock = ing['stock'] - ing['quantity_needed'] * quantity
-        cursor.execute("UPDATE ingredients SET quantity=%s WHERE ing_id=%s", (new_stock, ing['ing_id']))
-    
-    cursor.execute("SELECT price, name FROM menu WHERE item_id=%s", (item_id,))
-    menu_item = cursor.fetchone()
-    item['name'] = menu_item['name']  
-    price = float(menu_item['price'])
-    subtotal = price * quantity
-    total_price += subtotal
+        for ing in ingredients:
+            if ing['stock'] < ing['quantity_needed'] * quantity:
+             cursor.close()
+             return render_template('customer/customer.html', error=f"Not enough {ing['name']}")
 
     cursor.execute("INSERT INTO orders (table_no, total_bill, status) VALUES (%s, %s, %s)", 
                    (table_no, 0, 'active'))
     order_id = cursor.lastrowid
 
+    total_price=0
 
     for item in cart_items:
+        item_id =item['item_id']
+        quantity=item["quantity"]
+        
+        cursor.execute("SELECT price, name FROM menu WHERE item_id=%s", (item_id,))
+        menu_item = cursor.fetchone()
+        price = float(menu_item['price'])
+        subtotal = price * quantity
+        total_price += subtotal
         cursor.execute("INSERT INTO order_details (order_id, item_id, quantity) VALUES (%s, %s, %s)", 
                        (order_id, item['item_id'], item['quantity']))
+        
+        cursor.execute("""
+        SELECT ingd.ing_id, ingd.quantity AS stock, r.quantity_needed
+        FROM item_ingredients r
+        JOIN ingredients ingd ON r.ing_id = ingd.ing_id
+        WHERE r.item_id=%s
+        """, (item_id,))
+        ingredients = cursor.fetchall()    
 
+        for ing in ingredients:
+            new_stock = ing['stock'] - ing['quantity_needed'] * quantity
+            cursor.execute("UPDATE ingredients SET quantity=%s WHERE ing_id=%s", (new_stock, ing['ing_id']))
+    
+    cursor.execute("UPDATE orders SET total_bill=%s WHERE order_id=%s",(total_price,order_id) )
     mysql.connection.commit()
+
     cursor.execute("""
         SELECT m.name AS item_name, m.price, oi.quantity, (m.price * oi.quantity) AS subtotal
         FROM order_details oi
@@ -99,10 +112,10 @@ def place_order():
         ordered_items=ordered_items
     )
 
-@app.route('/payment/int<order_id>', methods=['POST','GET'])
+@app.route('/payment/<int:order_id>', methods=['POST','GET'])
 def payment(order_id):
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('SELECT * FROM Orders WHERE order_id = %S',(order_id,))
+    cursor.execute('SELECT * FROM Orders WHERE order_id = %s',(order_id,))
     order=cursor.fetchone()
     if not order :
         return "Order not found"
