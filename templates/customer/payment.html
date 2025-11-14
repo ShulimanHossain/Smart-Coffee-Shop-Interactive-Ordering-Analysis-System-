@@ -15,7 +15,6 @@
             height: 100vh;
             margin: 0;
         }
-
         .container {
             background: #494983;
             border-radius: 15px;
@@ -24,16 +23,8 @@
             width: 400px;
             text-align: center;
         }
-
-        h1 {
-            color: #00c6ff;
-            margin-bottom: 10px;
-        }
-
-        h3 {
-            margin-bottom: 25px;
-            color: #bbb;
-        }
+        h1 { color: #00c6ff; margin-bottom: 10px; }
+        h3 { margin-bottom: 25px; color: #bbb; }
 
         .order-info {
             text-align: left;
@@ -43,35 +34,21 @@
             margin-bottom: 25px;
         }
 
-        .order-info p {
-            margin: 6px 0;
-        }
-
         select, button {
             width: 100%;
             padding: 10px;
             border-radius: 8px;
             border: none;
-            outline: none;
             margin-top: 10px;
         }
-
-        select {
-            background: #44445e;
-            color: #fff;
-        }
-
+        select { background: #44445e; color: #fff; }
         button {
             background: #00c6ff;
             color: #fff;
             font-weight: bold;
             cursor: pointer;
-            transition: background 0.3s;
         }
-
-        button:hover {
-            background: #009bd1;
-        }
+        button:hover { background: #009bd1; }
 
         .msg {
             background: #222;
@@ -80,11 +57,7 @@
             margin-top: 20px;
             color: #00ffcc;
         }
-
-        .success {
-            color: #00ff99;
-            font-weight: bold;
-        }
+        .success { color: #00ff99; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -93,8 +66,8 @@
         <h3>Order ID: {{ order.order_id }}</h3>
 
         <div class="order-info">
-            <p><strong>Customer:</strong> {{ order.customer_name }}</p>
-            <p><strong>Total Amount:</strong> {{ order.total_price }} BDT</p>
+            <p><strong>Table:</strong> {{ order.table_no }}</p>
+            <p><strong>Total Amount:</strong> {{ order.total_bill }} BDT</p>
             <p><strong>Status:</strong> {{ order.status }}</p>
         </div>
 
@@ -109,6 +82,7 @@
             </select>
             <button type="submit">Confirm Payment</button>
         </form>
+
         {% else %}
         <div class="msg">
             <p class="success">✔ Payment Method: {{ payment_method }}</p>
