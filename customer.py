@@ -18,14 +18,7 @@ def home():
     cursor.close()
     return render_template('customer/customer.html',menu=menu,tables=tables)  
       
-@app.route('/tables')
-def view_tables():
-    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute("SELECT * FROM cafe_tables")
-    tables = cursor.fetchall()
-    cursor.close()
-    return render_template('tables.html', tables=tables)
-
+      
 @app.route('/place_order', methods=['POST'])
 def place_order():
     table_no= request.form.get('table_no')
@@ -43,7 +36,7 @@ def place_order():
         if not table or table['status'] != 'Free':
             cursor.close()
             return render_template('customer/customer.html', error=f"Table {table_no} not available")
-   
+    
 
     for item in cart_items:
         item_id = item['item_id']
