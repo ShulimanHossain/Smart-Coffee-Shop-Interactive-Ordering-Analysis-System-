@@ -9,6 +9,24 @@ app.config.from_object(Config)
 app.secret_key='my_key_374'
 mysql=MySQL (app)
 
+@app.before_request
+def check_role():
+    protected_routes = {
+        'add_item': ['admin'],
+        'delete_menu': ['admin'],
+        'change_price': ['admin'],
+        'updatestock': ['admin'],
+        'view_order': ['admin', 'manager'],
+        'admin_dashboard': ['admin', 'manager'],
+        'confirm_payment': ['admin','manager']
+
+    }
+    requested_function = request.endpoint
+    if requested_function in protected_routes:
+        allowed_roles = protected_routes[requested_function]
+        user_role = session.get('role')
+        if user_role not in allowed_roles:
+            return "Access Denied! You are not authorized.", 403
 
 @app.route('/login',methods=['GET','POST'])
 def login():
@@ -146,13 +164,24 @@ def view_order():
 
 @app.route('/admin/confirm_payment/<int:order_id>', methods=['POST'])
 def confirm_payment(order_id):
+    status=request.form.get('status')
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    table=cursor.execute("SELECT table_no FROM Orders WHERE order_id=%s",(order_id,)) 
-    cursor.execute("UPDATE Orders SET status ='completed' WHERE order_id=%s",(order_id,))
-    cursor.execute("UPDATE cafe_tables SET status ='Free' WHERE table_no=%s",(table))
-    mysql.connection.commit()
-    cursor.close()
-    return redirect(url_for('view_order'))
+    if status =="completed":
+        cursor.execute("""UPDATE Orders SET payment_status='paid', order_status='completed'
+                       WHERE order_id=%s """,(order_id,))
+        cursor.execute("""UPDATE cafe_tables SET status='Free' 
+                       WHERE table_no=(SELECT table_no FROM Orders WHERE order_id=%s)""",(order_id,))
+        mysql.connection.commit()
+        cursor.close()
+        return "Completed"
+    elif status =="failed":
+        cursor.close()
+        return "Failed"
+    elif status =="pending":
+        cursor.close()
+        return "Pending"
+  
+
 @app.route('/logout')
 def logout(): 
     session.clear()
