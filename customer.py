@@ -18,25 +18,22 @@ def home():
     cursor.close()
     return render_template('customer/customer.html',menu=menu,tables=tables)  
       
-      
+
 @app.route('/place_order', methods=['POST'])
 def place_order():
     table_no= request.form.get('table_no')
     cart_data=request.form.get('cart_data')
     cart_items = json.loads(cart_data)
-    existing_order=request.form.get('order_id')
 
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute("SELECT status FROM cafe_tables WHERE table_no=%s", (table_no,))
     table = cursor.fetchone()
 
-    if not existing_order:
-        cursor.execute("SELECT status FROM cafe_tables WHERE table_no=%s", (table_no,))
-        table = cursor.fetchone()
-        if not table or table['status'] != 'Free':
-            cursor.close()
-            return render_template('customer/customer.html', error=f"Table {table_no} not available")
-    
+    if not table or table['status'] != 'Free':
+        cursor.close()
+        return render_template('customer/customer.html', error=f"Table {table_no} not available")
+
+   
 
     for item in cart_items:
         item_id = item['item_id']
@@ -54,15 +51,12 @@ def place_order():
             if ing['stock'] < ing['quantity_needed'] * quantity:
              cursor.close()
              return render_template('customer/customer.html', error=f"Not enough {ing['name']}")
-    total_price=0
-    if existing_order :
-        order_id=int(existing_order)
-    else :
-         cursor.execute("INSERT INTO orders (table_no, total_bill, status) VALUES (%s, %s, %s)", 
-                   (table_no, 0, 'active'))
-         order_id = cursor.lastrowid
 
-   
+    cursor.execute("INSERT INTO orders (table_no, total_bill, status) VALUES (%s, %s, %s)", 
+                   (table_no, 0, 'active'))
+    order_id = cursor.lastrowid
+
+    total_price=0
 
     for item in cart_items:
         item_id =item['item_id']
@@ -87,13 +81,8 @@ def place_order():
         for ing in ingredients:
             new_stock = ing['stock'] - ing['quantity_needed'] * quantity
             cursor.execute("UPDATE ingredients SET quantity=%s WHERE ing_id=%s", (new_stock, ing['ing_id']))
-
-    if existing_order:
-        cursor.execute("UPDATE orders SET total_bill = total_bill + %s WHERE order_id=%s",
-                       (total_price, order_id)) 
-    else:
-        cursor.execute("UPDATE orders SET total_bill=%s WHERE order_id=%s", (total_price, order_id))
-
+    
+    cursor.execute("UPDATE orders SET total_bill=%s WHERE order_id=%s",(total_price,order_id) )
     mysql.connection.commit()
 
     cursor.execute("""
@@ -115,6 +104,7 @@ def place_order():
         total_price=order_info['total_bill'],
         ordered_items=ordered_items
     )
+
 
 @app.route('/payment/<int:order_id>', methods=['POST','GET'])
 def payment(order_id):
