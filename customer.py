@@ -80,7 +80,6 @@ def update_order_details(order_id,cart_items,cursor):
     
           for ing in ingredients:
              if ing['stock'] < ing['quantity_needed'] * quantity:
-              cursor.close()
               return render_template('customer/customer.html', error=f"Not enough {ing['name']}")
           cursor.execute("INSERT INTO order_details (order_id, item_id, quantity) VALUES (%s, %s, %s)", 
                        (order_id, item_id, quantity))
@@ -93,7 +92,7 @@ def update_order_details(order_id,cart_items,cursor):
             new_stock = ing['stock'] - (ing['quantity_needed'] * quantity)
             cursor.execute("UPDATE ingredients SET quantity=%s WHERE ing_id=%s", (new_stock, ing['ing_id']))
 
-          cursor.execute("UPDATE orders SET total_bill=total_bill + %s WHERE order_id=%s",(total_price,order_id))
+      cursor.execute("UPDATE orders SET total_bill=total_bill + %s WHERE order_id=%s",(total_price,order_id))
 
 def order_success(order_id):
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
@@ -104,7 +103,7 @@ def order_success(order_id):
         WHERE oi.order_id = %s
     """, (order_id,))
     ordered_items = cursor.fetchall()
-    cursor.execute("SELECT total_bill, table_no FROM orders WHERE order_id=%s", (order_id,))
+    cursor.execute("SELECT total_bill, table_no FROM Orders WHERE order_id=%s", (order_id,))
     order_info = cursor.fetchone()
     cursor.close()
 
@@ -127,15 +126,40 @@ def payment(order_id):
     
     if request.method=="POST":
        method =request.form.get('payment_method')
-       cursor.execute("UPDATE Orders SET payment_method=%s WHERE order_id=%s",(method,order_id))
+
+       cursor.execute("UPDATE Orders SET payment_method=%s,payment_status='pending' WHERE order_id=%s",(method,order_id))
        mysql.connection.commit()
        cursor.close()
-       msg="Please wait, a waiter will come to receive your payment according to your selecting option"
+       msg="Please wait.... Admin will confirm your payment shortly"
        return render_template('payment.html',order=order,payment_done=True,payment_method=method,msg=msg)
-    
+    cursor.close()
     return render_template('payment.html',order=order,payment_done=False)
-    
+  
+@app.route('/payment_status/<int:order_id>')
+def payment_status(order_id):
+    cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT payment_status FROM Orders WHERE order_id = %s',(order_id,))
+    status=cursor.fetchone()
+    cursor.close()
 
+    if not status:
+        return "invalid"
+
+    return status['payment_status']
+
+@app.route('/order_summary/<int:order_id>')
+def order_summary(order_id):
+    cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT * FROM Orders WHERE order_id = %s',(order_id,))
+    order=cursor.fetchone()
+    
+    if not order:
+        return jsonify({"status": "invalid"})
+    
+    cursor.execute("""SELECT menu.name, order_item.quantity, menu.price FROM OrderDetails order_item 
+                   JOIN  menu ON order_item.item_id=menu.item_id WHERE order_item.order_id=%s """,(order_id,))
+    items=cursor.fetchall()
+    return jsonify ({"status":"Success","order":"order","items":"items"})
 
 if __name__ =="__main__":
     app.run(debug=True)
