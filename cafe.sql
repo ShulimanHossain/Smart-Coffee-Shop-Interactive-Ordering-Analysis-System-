@@ -1,6 +1,17 @@
 CREATE DATABASE Cafe;
 USE cafe;
 
+CREATE TABLE User(
+     id INT AUTO_INCREMENT PRIMARY KEY,
+     user_code VARCHAR(20) UNIQUE,
+     name VARCHAR(20) NOT NULL,
+     email VARCHAR(20) UNIQUE NOT NULL,
+     password VARCHAR(20) NOT NULL ,
+     role ENUM('admin','manager','staff') NOT NULL ,
+     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+   
+);
+
 CREATE TABLE ingredients(
     ing_id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
