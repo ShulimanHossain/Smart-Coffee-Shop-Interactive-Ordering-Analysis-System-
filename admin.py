@@ -18,29 +18,64 @@ def check_role():
         'updatestock': ['admin'],
         'view_order': ['admin', 'manager'],
         'admin_dashboard': ['admin', 'manager'],
-        'confirm_payment': ['admin','manager']
-
+        'confirm_payment': ['admin','manager'],
+        'generate_user_id' :['admin']
     }
+
     requested_function = request.endpoint
     if requested_function in protected_routes:
         allowed_roles = protected_routes[requested_function]
         user_role = session.get('role')
+
+        if not user_role :
+            return redirect(url_for('login'))
         if user_role not in allowed_roles:
             return "Access Denied! You are not authorized.", 403
+
+def generate_user_id(role):
+    cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute("SELECT COUNT(*) AS count FROM users WHERE role =%s", (role,))
+    code=cursor.fetchone()[0] + 1
+    cursor.close()
+    return f"{role}{code:02}"
+
+@app.route('/create_user',method=['POST'])
+def create_user():
+     name=request.form('name')
+     email=request.form('email')
+     password=request.form('password')
+     role=request.form('role')
+
+     user_code=generate_user_id(role)
+
+     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+     cursor.execute("INSERT INTO users (user_id,name,email,password,role) VALUES (%s,%s,%s,%s,%s)",
+                   (user_code, name, email, password, role))
+     mysql.connection.commit()
+     user_id=cursor.lastrowid
+     cursor.close()
+     
+     return jsonify({"id":user_id,"user_role":role,"user_code":user_code,"msg":"User created"})
+
 
 @app.route('/login',methods=['GET','POST'])
 def login():
     if request.method=='POST':
-        userid=request.form['admin_id']
+        uid=request.form['user_code']
         password=request.form['password']
-    cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute("SELECT password FROM admin WHERE admin_id=%s",(userid,))
-    admin=cursor.fetchone()
-    if not admin :
-        return render_template('login.html', message="Admin not found")
-    if password== admin[password]:
-        session['admin_id']=userid
-        return redirect(url_for('admin_dashboard',admin_id=userid))
+
+        cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+
+        cursor.execute("SELECT user_code,password,role FROM User WHERE user_code=%s",(uid,))
+        uid=cursor.fetchone()
+
+    if not uid :
+        return render_template('login.html', message="User not found")
+    
+    if password== uid[password]:
+        session['uid']=uid['user_code']
+        session['role']=uid['role']
+        return redirect(url_for('admin_dashboard',uid=uid))
     else :
         return render_template('login.html',message="Invalid password")
 
