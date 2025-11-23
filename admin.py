@@ -19,7 +19,8 @@ def check_role():
         'view_order': ['admin', 'manager'],
         'admin_dashboard': ['admin', 'manager'],
         'confirm_payment': ['admin','manager'],
-        'generate_user_id' :['admin']
+        'generate_user_id' :['admin'],
+        'create_user' : ['admin']
     }
 
     requested_function = request.endpoint
@@ -35,16 +36,17 @@ def check_role():
 def generate_user_id(role):
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute("SELECT COUNT(*) AS count FROM users WHERE role =%s", (role,))
-    code=cursor.fetchone()[0] + 1
+    data=cursor.fetchone()
+    code=data["count"] + 1
     cursor.close()
     return f"{role}{code:02}"
 
-@app.route('/create_user',method=['POST'])
+@app.route('/create_user',methods=['POST'])
 def create_user():
-     name=request.form('name')
-     email=request.form('email')
-     password=request.form('password')
-     role=request.form('role')
+     name=request.form.get('name')
+     email=request.form.get('email')
+     password=request.form.get('password')
+     role=request.form.get('role')
 
      user_code=generate_user_id(role)
 
@@ -67,19 +69,19 @@ def login():
         cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
 
         cursor.execute("SELECT user_code,password,role FROM User WHERE user_code=%s",(uid,))
-        uid=cursor.fetchone()
+        user=cursor.fetchone()
 
-    if not uid :
+    if not user :
         return render_template('login.html', message="User not found")
     
     if password== uid[password]:
-        session['uid']=uid['user_code']
-        session['role']=uid['role']
-        return redirect(url_for('admin_dashboard',uid=uid))
+        session['uid']=user['user_code']
+        session['role']=user['role']
+        return redirect(url_for('admin_dashboard',admin_id=user('user_code')))
     else :
         return render_template('login.html',message="Invalid password")
 
-@app.route('/admin/<int:admin_id>')
+@app.route('/admin/<string:admin_id>')
 def admin_dashboard(admin_id):
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute("SELECT *  FROM tables")
