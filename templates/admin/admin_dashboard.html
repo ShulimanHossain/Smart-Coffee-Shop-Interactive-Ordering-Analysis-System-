@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Dashboard</title>
+<style>
+body, html {
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    min-height: 100vh;
+    background: url('cafe_ml.png') no-repeat center center fixed;
+    background-size: cover;
+}
+
+/* Sidebar */
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 220px;
+    height: 100%;
+    background: linear-gradient(to bottom, #1f2937, #111827);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+}
+.sidebar h2 {
+    color: #fff;
+    text-align: center;
+    margin-bottom: 2rem;
+}
+.sidebar a {
+    color: #d1d5db;
+    text-decoration: none;
+    padding: 10px 15px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    transition: 0.3s;
+}
+.sidebar a:hover, .sidebar a.active {
+    background: #2563eb;
+    color: #fff;
+    font-weight: 600;
+}
+
+/* Content */
+.content {
+    margin-left: 240px;
+    padding: 2rem;
+    min-height: 100vh;
+    background: rgba(255, 255, 255, 0.9);
+}
+h2.page-title {
+    text-align: center;
+    margin-bottom: 20px;
+    color: #333;
+}
+
+/* Card Grid */
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 15px;
+}
+.card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 15px;
+    text-align: center;
+    box-shadow: 0 6px 15px rgba(0,0,0,0.1);
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.card:hover {
+    transform: scale(1.03);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+}
+.card h3 { margin: 10px 0; }
+.card p { margin: 5px 0; color: #555; }
+.card button {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    background: #28a745;
+    color: #fff;
+    cursor: pointer;
+}
+.card button:hover { background: #218838; }
+
+/* Form Cards */
+.form-card {
+    background: #fff;
+    padding: 25px;
+    border-radius: 12px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+    max-width: 650px;
+    margin: 0 auto 20px auto;
+}
+label {
+    display: block;
+    margin-top: 15px;
+    font-weight: 600;
+    color: #444;
+}
+input, select {
+    width: 100%;
+    padding: 10px;
+    margin-top: 6px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+}
+input:focus, select:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 3px rgba(0,123,255,0.2);
+    outline: none;
+}
+
+/* Message */
+.message {
+    font-weight: 600;
+    color: #155724;
+    margin-bottom: 20px;
+    padding: 12px;
+    border: 1px solid #c3e6cb;
+    border-radius: 8px;
+    background: #d4edda;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    max-width: 650px;
+    margin: 0 auto 20px auto;
+}
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+    <h2>Admin Panel</h2>
+    <a href="?action=active" class="{% if action=='active' %}active{% endif %}">Active Orders</a>
+    <a href="?action=add" class="{% if action=='add' %}active{% endif %}">Add Item</a>
+    <a href="?action=view_menu" class="{% if action=='view_menu' %}active{% endif %}">View Menu</a>
+    <a href="?action=delete_menu" class="{% if action=='delete_menu' %}active{% endif %}">Delete Item</a>
+    <a href="?action=update_stock" class="{% if action=='update_stock' %}active{% endif %}">Update Stock</a>
+    <a href="?action=change_price" class="{% if action=='change_price' %}active{% endif %}">Change Price</a>
+    <a href="?action=view_orders" class="{% if action=='view_orders' %}active{% endif %}">View Orders</a>
+</div>
+
+<div class="content">
+    <h2 class="page-title">
+        {% if action == 'active' %}Active Orders{% elif action == 'add' %}Add Item{% elif action=='view_menu'%}Menu{% elif action=='delete_menu'%}Delete Item{% elif action=='update_stock'%}Update Stock{% elif action=='change_price'%}Change Price{% elif action=='view_orders'%}Orders{% endif %}
+    </h2>
+
+    {% if message %}<div class="message">{{ message }}</div>{% endif %}
+
+    <!-- Active Orders / Clickable Cards -->
+    {% if action == 'active' or action=='view_orders' %}
+    <div class="card-grid">
+        {% for order in active_order %}
+        <div class="card" onclick="location.href='/admin/order/{{ order.order_id }}'">
+            <h3>Order #{{ order.order_id }}</h3>
+            <p>Table: {{ order.table_no }}</p>
+            <p>Status: {{ order.status }}</p>
+            <p>Total: ${{ order.total }}</p>
+            <button>View Details</button>
+        </div>
+        {% endfor %}
+        {% if active_order|length == 0 %}
+        <p>No orders available.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Add / Delete / Update Stock / Change Price - Clickable Cards -->
+    {% if action=='view_menu' or action=='delete_menu' or action=='update_stock' or action=='change_price' %}
+    <div class="card-grid">
+        {% for item in menu %}
+        <div class="card" onclick="location.href='/admin/{{ admin_id }}/item/{{ item.item_id }}?action={{ action }}'">
+            <h3>{{ item.name }}</h3>
+            <p>Price: ${{ item.price }}</p>
+            <p>Stock: {{ item.stock if item.stock is defined else 'N/A' }}</p>
+            <button>Manage</button>
+        </div>
+        {% endfor %}
+        {% if menu|length == 0 %}
+        <p>No items available.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Add Item Form (Optional, as separate page could be used) -->
+    {% if action=='add' %}
+    <div class="form-card">
+        <form method="POST" action="/admin/{{ admin_id }}/add_item">
+            <label>Item Name</label>
+            <input name="name" required>
+            <label>Price</label>
+            <input type="number" step="0.01" name="price" required>
+            <div id="ingredients-container">
+                <label>Ingredients</label>
+                <input type="text" name="ingredient_name[]" placeholder="Ingredient Name" required>
+                <input type="number" name="ingredient_quantity[]" placeholder="Quantity" required>
+            </div>
+            <button type="button" onclick="addIngredientField()">Add Another Ingredient</button>
+            <button type="submit" class="add-btn">Add Item</button>
+        </form>
+    </div>
+    <script>
+        function addIngredientField() {
+            const container = document.getElementById('ingredients-container');
+            const nameInput = document.createElement('input');
+            nameInput.type='text'; nameInput.name='ingredient_name[]'; nameInput.placeholder='Ingredient Name'; nameInput.required=true;
+            const qtyInput = document.createElement('input');
+            qtyInput.type='number'; qtyInput.name='ingredient_quantity[]'; qtyInput.placeholder='Quantity'; qtyInput.required=true;
+            container.appendChild(nameInput); container.appendChild(qtyInput);
+        }
+    </script>
+    {% endif %}
+
+</div>
+</body>
+</html>
