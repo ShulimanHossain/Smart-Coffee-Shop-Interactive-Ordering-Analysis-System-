@@ -33,6 +33,33 @@ def check_role():
         if user_role not in allowed_roles:
             return "Access Denied! You are not authorized.", 403
 
+@app.route('/')
+def home():
+    return render_template('login.html')
+
+
+@app.route('/login',methods=['GET','POST'])
+def login():
+    if request.method=='POST':
+        uid=request.form['user_code']
+        password=request.form['password']
+
+        cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+
+        cursor.execute("SELECT user_code,password,role FROM User WHERE user_code=%s",(uid,))
+        user=cursor.fetchone()
+
+    if not user :
+        return render_template('admin/login.html', message="User not found")
+    
+    if password== uid[password]:
+        session['uid']=user['user_code']
+        session['role']=user['role']
+        return redirect(url_for('admin_dashboard',admin_id=user['user_code']))
+    else :
+        return render_template('admin/login.html',message="Invalid password")
+    
+
 def generate_user_id(role):
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute("SELECT COUNT(*) AS count FROM users WHERE role =%s", (role,))
@@ -60,26 +87,7 @@ def create_user():
      return jsonify({"id":user_id,"user_role":role,"user_code":user_code,"msg":"User created"})
 
 
-@app.route('/login',methods=['GET','POST'])
-def login():
-    if request.method=='POST':
-        uid=request.form['user_code']
-        password=request.form['password']
 
-        cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-
-        cursor.execute("SELECT user_code,password,role FROM User WHERE user_code=%s",(uid,))
-        user=cursor.fetchone()
-
-    if not user :
-        return render_template('login.html', message="User not found")
-    
-    if password== uid[password]:
-        session['uid']=user['user_code']
-        session['role']=user['role']
-        return redirect(url_for('admin_dashboard',admin_id=user('user_code')))
-    else :
-        return render_template('login.html',message="Invalid password")
 
 @app.route('/admin/<string:admin_id>')
 def admin_dashboard(admin_id):
@@ -88,14 +96,14 @@ def admin_dashboard(admin_id):
     table=cursor.fetchall()
     cursor.execute("SELECT * FROM orders WHERE status ='active' ORDER BY timestamp DESC")
     active_order =cursor.fetchall()
-    return render_template('admin_dashboard.html',admin_id=admin_id,tables=table,active_order=active_order)
+    return render_template('admin/admin_dashboard.html',admin_id=admin_id,tables=table,active_order=active_order)
 
 @app.route('/admin/<int:admin_id>/menu')
 def view_menu(admin_id):
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute("SELECT * FROM Menu")
     menu=cursor.fetchall()
-    return render_template('admin_dashboard.html',admin_id=admin_id,menu=menu)
+    return render_template('admin/admin_dashboard.html',admin_id=admin_id,menu=menu)
 
 @app.route('/admin/<int:admin_id>/add_item', methods=['POST'])
 def add_item(admin_id):
@@ -127,7 +135,7 @@ def add_item(admin_id):
         mysql.connection.commit()
         message="Item added successfully"
     
-    return redirect(url_for('admin_dashboard',action='add_item',message=message, admin_id=admin_id))
+    return redirect(url_for('admin/admin_dashboard',action='add_item',message=message, admin_id=admin_id))
 
 
 @app.route('/admin/menu/delete_menu',methods=['POST','GET'])
@@ -146,7 +154,7 @@ def delete_menu():
     cursor.execute("SELECT item_id,name FROM menu")
     menu=cursor.fetchall()
     cursor.close()
-    return render_template('delete_menu.html',action='delete_menu',menu=menu,message=message)
+    return render_template('admin/delete_menu.html',action='delete_menu',menu=menu,message=message)
 
 @app.route('/admin/menu/change_price',methods=['POST','GET'])
 def change_price():
@@ -166,7 +174,7 @@ def change_price():
     cursor.execute("SELECT item_id,name FROM Menu")
     menu=cursor.fetchall()
     cursor.close()
-    return render_template('change_price.html',action='change_price',menu=menu,message=message)
+    return render_template('admin/change_price.html',action='change_price',menu=menu,message=message)
 
 @app.route('/admin/updatestock', methods=['GET','POST'])
 def updatestock():
@@ -185,7 +193,7 @@ def updatestock():
       cursor.execute("SELECT ing_id,name, quantity FROM Ingredients")
       ingredients=cursor.fetchall()
       cursor.close()
-      return render_template('update_stock.html',action='updatestock',ingredients=ingredients,message=message)
+      return render_template('admin/update_stock.html',action='updatestock',ingredients=ingredients,message=message)
 
 @app.route('/admin/order',methods=['GET'])
 def view_order():
@@ -196,7 +204,7 @@ def view_order():
                    ORDER BY o.order_date, o.order_time""")
     orders=cursor.fetchall()
     cursor.close()
-    return render_template('view_order.html',orders =orders)
+    return render_template('admin/view_order.html',orders =orders)
 
 
 @app.route('/admin/confirm_payment/<int:order_id>', methods=['POST'])
