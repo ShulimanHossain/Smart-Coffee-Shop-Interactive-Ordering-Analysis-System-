@@ -87,8 +87,6 @@ def create_user():
      return jsonify({"id":user_id,"user_role":role,"user_code":user_code,"msg":"User created"})
 
 
-
-
 @app.route('/admin/<string:admin_id>')
 def admin_dashboard(admin_id):
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
@@ -97,6 +95,20 @@ def admin_dashboard(admin_id):
     cursor.execute("SELECT * FROM orders WHERE status ='active' ORDER BY timestamp DESC")
     active_order =cursor.fetchall()
     return render_template('admin/admin_dashboard.html',admin_id=admin_id,tables=table,active_order=active_order)
+
+@app.route('/admin/<string:admin_id>')
+def changepass():
+     message=''
+     
+     if request.method=='POST':
+             uid=request.form['admin_id']
+             newpass=request.form['newpassword']
+             cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+             cursor.execute('UPDATE Admin SET admin_password=%s WHERE user_code=%s',(newpass,uid))
+             mysql.connection.commit()
+             message="Successfully changed password"
+             
+     return render_template('admin/admin_dashboard.html',user_code=uid,message=message)
 
 @app.route('/admin/<int:admin_id>/menu')
 def view_menu(admin_id):
