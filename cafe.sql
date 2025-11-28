@@ -9,7 +9,6 @@ CREATE TABLE User(
      password VARCHAR(20) NOT NULL ,
      role ENUM('admin','manager','staff') NOT NULL ,
      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-   
 );
 
 CREATE TABLE ingredients(

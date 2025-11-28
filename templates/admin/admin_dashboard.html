@@ -143,16 +143,29 @@ input:focus, select:focus {
     <a href="?action=update_stock" class="{% if action=='update_stock' %}active{% endif %}">Update Stock</a>
     <a href="?action=change_price" class="{% if action=='change_price' %}active{% endif %}">Change Price</a>
     <a href="?action=view_orders" class="{% if action=='view_orders' %}active{% endif %}">View Orders</a>
+
+    <!-- NEW CHANGE PASSWORD OPTION -->
+    <a href="?action=change_password" class="{% if action=='change_password' %}active{% endif %}">
+        Change Password
+    </a>
 </div>
 
 <div class="content">
     <h2 class="page-title">
-        {% if action == 'active' %}Active Orders{% elif action == 'add' %}Add Item{% elif action=='view_menu'%}Menu{% elif action=='delete_menu'%}Delete Item{% elif action=='update_stock'%}Update Stock{% elif action=='change_price'%}Change Price{% elif action=='view_orders'%}Orders{% endif %}
+        {% if action == 'active' %}Active Orders
+        {% elif action == 'add' %}Add Item
+        {% elif action=='view_menu' %}Menu
+        {% elif action=='delete_menu' %}Delete Item
+        {% elif action=='update_stock' %}Update Stock
+        {% elif action=='change_price' %}Change Price
+        {% elif action=='view_orders' %}Orders
+        {% elif action=='change_password' %}Change Password
+        {% endif %}
     </h2>
 
     {% if message %}<div class="message">{{ message }}</div>{% endif %}
 
-    <!-- Active Orders / Clickable Cards -->
+    <!-- Active Orders -->
     {% if action == 'active' or action=='view_orders' %}
     <div class="card-grid">
         {% for order in active_order %}
@@ -170,7 +183,7 @@ input:focus, select:focus {
     </div>
     {% endif %}
 
-    <!-- Add / Delete / Update Stock / Change Price - Clickable Cards -->
+    <!-- Menu Management -->
     {% if action=='view_menu' or action=='delete_menu' or action=='update_stock' or action=='change_price' %}
     <div class="card-grid">
         {% for item in menu %}
@@ -187,7 +200,7 @@ input:focus, select:focus {
     </div>
     {% endif %}
 
-    <!-- Add Item Form (Optional, as separate page could be used) -->
+    <!-- Add Item Form -->
     {% if action=='add' %}
     <div class="form-card">
         <form method="POST" action="/admin/{{ admin_id }}/add_item">
@@ -195,11 +208,13 @@ input:focus, select:focus {
             <input name="name" required>
             <label>Price</label>
             <input type="number" step="0.01" name="price" required>
+
             <div id="ingredients-container">
                 <label>Ingredients</label>
                 <input type="text" name="ingredient_name[]" placeholder="Ingredient Name" required>
                 <input type="number" name="ingredient_quantity[]" placeholder="Quantity" required>
             </div>
+
             <button type="button" onclick="addIngredientField()">Add Another Ingredient</button>
             <button type="submit" class="add-btn">Add Item</button>
         </form>
@@ -208,12 +223,39 @@ input:focus, select:focus {
         function addIngredientField() {
             const container = document.getElementById('ingredients-container');
             const nameInput = document.createElement('input');
-            nameInput.type='text'; nameInput.name='ingredient_name[]'; nameInput.placeholder='Ingredient Name'; nameInput.required=true;
+            nameInput.type='text'; 
+            nameInput.name='ingredient_name[]'; 
+            nameInput.placeholder='Ingredient Name'; 
+            nameInput.required=true;
+
             const qtyInput = document.createElement('input');
-            qtyInput.type='number'; qtyInput.name='ingredient_quantity[]'; qtyInput.placeholder='Quantity'; qtyInput.required=true;
-            container.appendChild(nameInput); container.appendChild(qtyInput);
+            qtyInput.type='number'; 
+            qtyInput.name='ingredient_quantity[]'; 
+            qtyInput.placeholder='Quantity'; 
+            qtyInput.required=true;
+
+            container.appendChild(nameInput);
+            container.appendChild(qtyInput);
         }
     </script>
+    {% endif %}
+
+    <!-- CHANGE PASSWORD FORM -->
+    {% if action=='change_password' %}
+    <div class="form-card">
+        <form method="POST" action="/admin/{{ admin_id }}/change_password">
+            <label>Current Password</label>
+            <input type="password" name="current_password" required>
+
+            <label>New Password</label>
+            <input type="password" name="new_password" required>
+
+            <label>Confirm New Password</label>
+            <input type="password" name="confirm_password" required>
+
+            <button type="submit" class="add-btn" style="margin-top: 15px;">Update Password</button>
+        </form>
+    </div>
     {% endif %}
 
 </div>
