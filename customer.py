@@ -10,13 +10,15 @@ mysql=MySQL (app)
 
 @app.route('/')
 def home():
+    
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute("SELECT item_id, name, price FROM menu")
     menu=cursor.fetchall() 
     cursor.execute("SELECT table_no, status FROM cafe_tables")
     tables = cursor.fetchall()
     cursor.close()
-    return render_template('customer/customer.html',menu=menu,tables=tables)  
+    order_id=session.get('order_id')
+    return render_template('customer/customer.html',menu=menu,tables=tables,order_id=order_id)  
       
 
 @app.route('/place_order', methods=['POST'])
@@ -26,11 +28,11 @@ def place_order():
     cart_items = json.loads(cart_data)
     existing_order= request.form.get('order_id')
 
-    if existing_order :
-        return add_new_item(int(existing_order),cart_items,table_no)
+    if 'order_id' in session :
+        return add_new_item(session['order_id'],cart_items,table_no)
     
-    else :
-         return create_order(table_no,cart_items)
+    
+    return create_order(table_no,cart_items)
     
 
 def create_order(table_no,cart_items):
@@ -40,28 +42,88 @@ def create_order(table_no,cart_items):
 
       if not table or table['status'] != 'Free':
           cursor.close()
-          return render_template('customer/customer.html', error=f"Table {table_no} not available")
-    
-      cursor.execute("INSERT INTO orders (table_no, total_bill, status) VALUES (%s, %s, %s)", 
+          cursor2 = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+          cursor2.execute("SELECT item_id, name, price FROM menu")
+          menu = cursor2.fetchall()
+          cursor2.execute("SELECT table_no, status FROM cafe_tables")
+          tables = cursor2.fetchall()
+          cursor2.close()
+
+          return render_template(
+               'customer/customer.html',
+            menu=menu,
+                tables=tables,
+               order_id=session.get('order_id'),
+               error=f"Table {table_no} not available"
+          )
+     
+      cursor.execute("INSERT INTO Orders (table_no, total_bill, status) VALUES (%s, %s, %s)", 
                    (table_no, 0, 'active'))
       order_id = cursor.lastrowid
-      update_order_details(order_id,cart_items,cursor)
+
+      session['order_id']=order_id
+
+      error=update_order_details(order_id,cart_items,cursor)
+      if error:
+          cursor.close()
+          return error
       mysql.connection.commit()
       cursor.close()
-      return order_success(order_id)
+      return redirect(url_for('order_success', order_id=order_id))
+
 
 
 def add_new_item(order_id,cart_items,table_no):
      cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
      cursor.execute("SELECT status FROM Orders WHERE order_id=%s ",(order_id,))
      order_status=cursor.fetchone()
+
      if not order_status or order_status['status']!='active':
           return "Order not active"
-     update_order_details(order_id,cart_items,cursor)
+     
+     error=update_order_details(order_id,cart_items,cursor)
+     if error:
+        cursor.close()
+        return error
      mysql.connection.commit()
      cursor.close()
 
-     return order_success(order_id)
+     return redirect(url_for('order_success', order_id=order_id))
+
+
+
+@app.route('/continue_order/<order_id>')
+def continue_order(order_id):
+
+    # If no order yet → go to normal home page
+    if order_id == "None" or order_id == "" or order_id is None:
+        return redirect(url_for("home"))
+
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+
+    cursor.execute("""
+        SELECT m.item_id, m.name, m.price, od.quantity
+        FROM Order_details od
+        JOIN menu m ON od.item_id = m.item_id
+        WHERE od.order_id = %s
+    """, (order_id,))
+    previous_items = cursor.fetchall()
+
+    cursor.execute("SELECT item_id, name, price FROM menu")
+    menu = cursor.fetchall()
+
+    cursor.execute("SELECT table_no, status FROM cafe_tables")
+    tables = cursor.fetchall()
+
+    cursor.close()
+
+    return render_template(
+        'customer/customer.html',
+        menu=menu,
+        tables=tables,
+        order_id=order_id,
+        previous_items=previous_items
+    )
 
 
 def update_order_details(order_id,cart_items,cursor):
@@ -80,8 +142,8 @@ def update_order_details(order_id,cart_items,cursor):
     
           for ing in ingredients:
              if ing['stock'] < ing['quantity_needed'] * quantity:
-              return render_template('customer/customer.html', error=f"Not enough {ing['name']}")
-          cursor.execute("INSERT INTO order_details (order_id, item_id, quantity) VALUES (%s, %s, %s)", 
+              return render_template('customer/customer.html',order_id=session.get('order_id'), error=f"Not enough {ing['name']}")
+          cursor.execute("INSERT INTO Order_details (order_id, item_id, quantity) VALUES (%s, %s, %s)", 
                        (order_id, item_id, quantity))
           cursor.execute("SELECT price, name FROM menu WHERE item_id=%s", (item_id,))
           menu_item = cursor.fetchone()
@@ -92,13 +154,14 @@ def update_order_details(order_id,cart_items,cursor):
             new_stock = ing['stock'] - (ing['quantity_needed'] * quantity)
             cursor.execute("UPDATE ingredients SET quantity=%s WHERE ing_id=%s", (new_stock, ing['ing_id']))
 
-      cursor.execute("UPDATE orders SET total_bill=total_bill + %s WHERE order_id=%s",(total_price,order_id))
-
+      cursor.execute("UPDATE Orders SET total_bill=total_bill + %s WHERE order_id=%s",(total_price,order_id))
+      return None
+@app.route('/order_success/<int:order_id>')
 def order_success(order_id):
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute("""
         SELECT m.name AS item_name, m.price, oi.quantity, (m.price * oi.quantity) AS subtotal
-        FROM order_details oi
+        FROM Order_details oi
         JOIN menu m ON oi.item_id = m.item_id
         WHERE oi.order_id = %s
     """, (order_id,))
@@ -125,11 +188,13 @@ def payment(order_id):
         return "Order not found"
     
     if request.method=="POST":
+       
        method =request.form.get('payment_method')
 
        cursor.execute("UPDATE Orders SET payment_method=%s,payment_status='pending' WHERE order_id=%s",(method,order_id))
        mysql.connection.commit()
        cursor.close()
+       session.pop('order_id',None)
        msg="Please wait.... Admin will confirm your payment shortly"
        return render_template('payment.html',order=order,payment_done=True,payment_method=method,msg=msg)
     cursor.close()
@@ -156,10 +221,15 @@ def order_summary(order_id):
     if not order:
         return jsonify({"status": "invalid"})
     
-    cursor.execute("""SELECT menu.name, order_item.quantity, menu.price FROM OrderDetails order_item 
+    cursor.execute("""SELECT menu.name, order_item.quantity, menu.price FROM Order_details order_item 
                    JOIN  menu ON order_item.item_id=menu.item_id WHERE order_item.order_id=%s """,(order_id,))
     items=cursor.fetchall()
-    return jsonify ({"status":"Success","order":"order","items":"items"})
+    return jsonify({
+    "status": "Success",
+    "order": order,
+    "items": items
+    })
+
 
 if __name__ =="__main__":
     app.run(debug=True)
