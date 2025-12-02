@@ -57,7 +57,7 @@ CREATE TABLE Order_details(
     item_id INT NOT NULL,
     quantity INT NOT NULL,
     FOREIGN KEY (order_id) REFERENCES Orders(order_id) ON DELETE CASCADE,
-    FOREIGN KEY (item_id) REFERENCES Menu(item_id) ON DELETE CASCADE
+    FOREIGN KEY (item_id) REFERENCES menu(item_id) ON DELETE CASCADE
 );
 INSERT INTO ingredients (name, quantity, unit) VALUES
 ('Coffee Beans', 1000, 'g'),

@@ -26,14 +26,32 @@ def place_order():
     table_no= request.form.get('table_no')
     cart_data=request.form.get('cart_data')
     cart_items = json.loads(cart_data)
-    existing_order= request.form.get('order_id')
+    order_id = request.form.get('order_id')
 
-    if 'order_id' in session :
-        return add_new_item(session['order_id'],cart_items,table_no)
+    order_id_to_use = None
+    if order_id:
+        order_id_to_use = order_id
+    elif 'order_id' in session:
+        order_id_to_use = session['order_id']
+
+    if order_id_to_use:
+        
+        try:
+            order_id_to_use = int(order_id_to_use)
+        except Exception:
+            pass
+        return add_new_item(order_id_to_use, cart_items, table_no)
+
+    return create_order(table_no, cart_items)
     
-    
-    return create_order(table_no,cart_items)
-    
+@app.route('/update_cart', methods=['POST'])
+def update_cart():
+    data = request.get_json()
+
+    session['cart'] = data.get('cart', [])
+    session.modified = True
+
+    return jsonify({"status": "success"})
 
 def create_order(table_no,cart_items):
       cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
@@ -95,9 +113,14 @@ def add_new_item(order_id,cart_items,table_no):
 @app.route('/continue_order/<order_id>')
 def continue_order(order_id):
 
-    # If no order yet → go to normal home page
+ 
     if order_id == "None" or order_id == "" or order_id is None:
         return redirect(url_for("home"))
+    
+    try :
+        session['order_id']=int(order_id)
+    except Exception:
+        session['order_id']=order_id
 
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
 
@@ -122,40 +145,51 @@ def continue_order(order_id):
         menu=menu,
         tables=tables,
         order_id=order_id,
-        previous_items=previous_items
+        previous_items=[]
     )
 
 
-def update_order_details(order_id,cart_items,cursor):
-      total_price=0
-     
-      for item in cart_items:
-          item_id = item['item_id']
-          quantity = item['quantity']
-          cursor.execute("""
-          SELECT ingd.ing_id, ingd.name, ingd.quantity AS stock, r.quantity_needed
-           FROM item_ingredients r
-           JOIN ingredients ingd ON r.ing_id = ingd.ing_id
-           WHERE r.item_id=%s
-           """, (item_id,))
-          ingredients = cursor.fetchall()
-    
-          for ing in ingredients:
-             if ing['stock'] < ing['quantity_needed'] * quantity:
-              return render_template('customer/customer.html',order_id=session.get('order_id'), error=f"Not enough {ing['name']}")
-          cursor.execute("INSERT INTO Order_details (order_id, item_id, quantity) VALUES (%s, %s, %s)", 
-                       (order_id, item_id, quantity))
-          cursor.execute("SELECT price, name FROM menu WHERE item_id=%s", (item_id,))
-          menu_item = cursor.fetchone()
-          price = float(menu_item['price'])
-          subtotal = price * quantity
-          total_price += subtotal
-          for ing in ingredients:
-            new_stock = ing['stock'] - (ing['quantity_needed'] * quantity)
-            cursor.execute("UPDATE ingredients SET quantity=%s WHERE ing_id=%s", (new_stock, ing['ing_id']))
+def update_order_details(order_id, cart_items, cursor):
+    total_price = 0.0
 
-      cursor.execute("UPDATE Orders SET total_bill=total_bill + %s WHERE order_id=%s",(total_price,order_id))
-      return None
+    try:
+        for item in cart_items:
+            item_id = item['item_id']
+            quantity = int(item['quantity'])
+
+            cursor.execute("""
+                SELECT ingd.ing_id, ingd.name, ingd.quantity AS stock, r.quantity_needed
+                FROM item_ingredients r
+                JOIN ingredients ingd ON r.ing_id = ingd.ing_id
+                WHERE r.item_id=%s
+            """, (item_id,))
+            ingredients = cursor.fetchall()
+
+            for ing in ingredients:
+                if ing['stock'] < ing['quantity_needed'] * quantity:
+                    return f"Not enough {ing['name']}"
+
+            cursor.execute("INSERT INTO order_details (order_id, item_id, quantity) VALUES (%s, %s, %s)",
+                           (order_id, item_id, quantity))
+
+            cursor.execute("SELECT price, name FROM menu WHERE item_id=%s", (item_id,))
+            menu_item = cursor.fetchone()
+            price = float(menu_item['price'])
+            subtotal = price * quantity
+            total_price += subtotal
+
+            for ing in ingredients:
+                new_stock = ing['stock'] - (ing['quantity_needed'] * quantity)
+                cursor.execute("UPDATE ingredients SET quantity=%s WHERE ing_id=%s",
+                               (new_stock, ing['ing_id']))
+
+        cursor.execute("UPDATE orders SET total_bill=total_bill + %s WHERE order_id=%s", (total_price, order_id))
+        return None
+
+    except Exception as e:
+        
+        return f"DB Error: {str(e)}"
+
 @app.route('/order_success/<int:order_id>')
 def order_success(order_id):
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
