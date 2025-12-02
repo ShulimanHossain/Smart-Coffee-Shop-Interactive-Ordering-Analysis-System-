@@ -37,11 +37,6 @@
             overflow-y: auto;
             box-shadow: 0 4px 12px rgba(0,0,0,0.2);
         }
-        .cart-item {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 10px;
-        }
         .btn-place-order {
             background-color: #ff7f50;
             color: white;
@@ -110,23 +105,20 @@
     </div>
 </div>
 
-<!-- UPDATED SCRIPT -->
+
 <script>
-    // Load previously stored cart from Flask (if any)
     const previousItems = JSON.parse(`{{ previous_items | default([]) | tojson | safe }}`);
-    let cart = [...previousItems];  // pre-fill cart
+    let cart = [...previousItems];
 
     const tableSelect = document.getElementById('table-select');
     const tableInput = document.getElementById('order-table-no');
 
-    // Set default table
     tableInput.value = tableSelect.value;
-
     tableSelect.addEventListener('change', () => {
         tableInput.value = tableSelect.value;
     });
 
-    // Add items to cart
+    // Add item to cart
     document.querySelectorAll('.menu-item').forEach(card => {
         card.addEventListener('click', function () {
             const id = this.dataset.id;
@@ -136,7 +128,7 @@
             const existing = cart.find(i => i.item_id == id);
 
             if (existing) {
-                existing.quantity += 1;
+                existing.quantity++;
             } else {
                 cart.push({ item_id: id, name: name, price: price, quantity: 1 });
             }
@@ -145,43 +137,54 @@
         });
     });
 
-    // Update cart UI + hidden input
-  function updateCartUI() {
-    const cartContainer = document.getElementById("cart-items");
-    const totalSpan = document.getElementById("cart-total");
-
-    cartContainer.innerHTML = "";
-
-    if (cart.length === 0) {
-        cartContainer.innerHTML = `<p class="text-muted">No items added yet</p>`;
-        totalSpan.textContent = "0.00";
-        return;
+    // REQUIRED FIX (this was missing)
+    function updateCart() {
+        updateCartUI();
     }
 
-    let total = 0;
+    function updateCartUI() {
+        const cartContainer = document.getElementById("cart-items");
+        const totalSpan = document.getElementById("cart-total");
 
-    cart.forEach((item, index) => {
-        cartContainer.innerHTML += `
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <span>${item.name} x${item.quantity} - $${(item.price * item.quantity).toFixed(2)}</span>
-                <button class="btn btn-sm btn-danger remove-btn" data-index="${index}">
-                    Remove
-                </button>
-            </div>
-        `;
+        cartContainer.innerHTML = "";
 
-        total += item.price * item.quantity;
+        if (cart.length === 0) {
+            cartContainer.innerHTML = `<p class="text-muted">No items added yet</p>`;
+            totalSpan.textContent = "0.00";
+            return;
+        }
+
+        let total = 0;
+
+        cart.forEach((item, index) => {
+            cartContainer.innerHTML += `
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>${item.name} x${item.quantity} - $${(item.price * item.quantity).toFixed(2)}</span>
+                    <button class="btn btn-sm btn-danger remove-btn" data-index="${index}">
+                        Remove
+                    </button>
+                </div>
+            `;
+
+            total += item.price * item.quantity;
+        });
+
+        totalSpan.textContent = total.toFixed(2);
+        document.getElementById("order-cart-data").value = JSON.stringify(cart);
+    }
+
+    document.addEventListener("click", function (e) {
+        if (e.target.classList.contains("remove-btn")) {
+            let index = e.target.getAttribute("data-index");
+            cart.splice(index, 1);
+            updateCart();
+        }
     });
 
-    totalSpan.textContent = total.toFixed(2);
-    document.getElementById("order-cart-data").value = JSON.stringify(cart);
-  }
-
-
-
-    // Show saved cart items immediately
-    updateCart();
+    // Load cart when page opens
+    updateCartUI();
 </script>
+
 
 </body>
 </html>

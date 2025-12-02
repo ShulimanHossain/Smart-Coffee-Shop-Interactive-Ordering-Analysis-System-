@@ -18,7 +18,7 @@ def home():
     tables = cursor.fetchall()
     cursor.close()
     order_id=session.get('order_id')
-    return render_template('customer/customer.html',menu=menu,tables=tables,order_id=order_id)  
+    return render_template('customer/customer.html',menu=menu,tables=tables,order_id=order_id,previous_items=[])  
       
 
 @app.route('/place_order', methods=['POST'])
@@ -69,25 +69,49 @@ def create_order(table_no,cart_items):
 
           return render_template(
                'customer/customer.html',
-            menu=menu,
+                menu=menu,
                 tables=tables,
                order_id=session.get('order_id'),
+               previous_items=[],
                error=f"Table {table_no} not available"
           )
-     
-      cursor.execute("INSERT INTO Orders (table_no, total_bill, status) VALUES (%s, %s, %s)", 
+      
+      try:
+         cursor.execute("INSERT INTO Orders (table_no, total_bill, status) VALUES (%s, %s, %s)", 
                    (table_no, 0, 'active'))
-      order_id = cursor.lastrowid
+         order_id = cursor.lastrowid
 
-      session['order_id']=order_id
+         session['order_id']=order_id
+         error=update_order_details(order_id,cart_items,cursor)
 
-      error=update_order_details(order_id,cart_items,cursor)
-      if error:
-          cursor.close()
-          return error
-      mysql.connection.commit()
-      cursor.close()
-      return redirect(url_for('order_success', order_id=order_id))
+         if error:
+             mysql.connection.rollback()
+             cursor.close()
+             cursor2 = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+             cursor2.execute("SELECT item_id, name, price FROM menu")
+             menu = cursor2.fetchall()
+             cursor2.execute("SELECT table_no, status FROM cafe_tables")
+             tables = cursor2.fetchall()
+             cursor2.close()
+             return render_template('customer/customer.html', menu=menu, tables=tables, order_id=session.get('order_id'),
+                                   previous_items=[], error=error)
+
+         mysql.connection.commit()
+         cursor.close()
+         return redirect(url_for('order_success', order_id=order_id))
+
+
+      except Exception  as e:
+             mysql.connection.rollback()
+             cursor.close()
+             cursor2 = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+             cursor2.execute("SELECT item_id, name, price FROM menu")
+             menu = cursor2.fetchall()
+             cursor2.execute("SELECT table_no, status FROM cafe_tables")
+             tables = cursor2.fetchall()
+             cursor2.close()
+             return render_template('customer/customer.html', menu=menu, tables=tables, order_id=session.get('order_id'),
+                               previous_items=[], error=f"DB Error: {str(e)}")
 
 
 
@@ -97,16 +121,31 @@ def add_new_item(order_id,cart_items,table_no):
      order_status=cursor.fetchone()
 
      if not order_status or order_status['status']!='active':
-          return "Order not active"
-     
-     error=update_order_details(order_id,cart_items,cursor)
-     if error:
-        cursor.close()
-        return error
-     mysql.connection.commit()
-     cursor.close()
+             cursor.close()
+             cursor2 = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+             cursor2.execute("SELECT item_id, name, price FROM menu")
+             menu = cursor2.fetchall()
+             cursor2.execute("SELECT table_no, status FROM cafe_tables")
+             tables = cursor2.fetchall()
+             cursor2.close()
+             return render_template('customer/customer.html', menu=menu, tables=tables, order_id=session.get('order_id'),
+                               previous_items=[], error="Order not active")
+     try :
+      error=update_order_details(order_id,cart_items,cursor)
+      if error:
+             mysql.connection.rollback()
+             cursor.close()
+             return render_template('customer/customer.html', menu=[], tables=[], order_id=session.get('order_id'),
+                                   previous_items=[], error=error)
+      mysql.connection.commit()
+      cursor.close()
 
-     return redirect(url_for('order_success', order_id=order_id))
+      return redirect(url_for('order_success', order_id=order_id))
+     except Exception as e:
+             mysql.connection.rollback()
+             cursor.close()
+             return render_template('customer/customer.html', menu=menu, tables=tables, order_id=session.get('order_id'),
+                               previous_items=[], error=f"DB Error: {str(e)}")
 
 
 
@@ -145,7 +184,7 @@ def continue_order(order_id):
         menu=menu,
         tables=tables,
         order_id=order_id,
-        previous_items=[]
+        previous_items=previous_items
     )
 
 
@@ -203,6 +242,13 @@ def order_success(order_id):
     cursor.execute("SELECT total_bill, table_no FROM Orders WHERE order_id=%s", (order_id,))
     order_info = cursor.fetchone()
     cursor.close()
+    
+    if not order_info:
+        return render_template( 'customer/order_success.html',
+        order_id=order_id,
+        table_no="Unknown Table number",
+        total_price=0,
+        ordered_items=[],error="Order not found")
 
     return render_template(
         'customer/order_success.html',
@@ -228,6 +274,7 @@ def payment(order_id):
        cursor.execute("UPDATE Orders SET payment_method=%s,payment_status='pending' WHERE order_id=%s",(method,order_id))
        mysql.connection.commit()
        cursor.close()
+
        session.pop('order_id',None)
        msg="Please wait.... Admin will confirm your payment shortly"
        return render_template('payment.html',order=order,payment_done=True,payment_method=method,msg=msg)
