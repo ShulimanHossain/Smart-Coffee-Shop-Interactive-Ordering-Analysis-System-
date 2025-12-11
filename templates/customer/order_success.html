@@ -82,22 +82,22 @@
             <table>
                 <tr>
                     <th>Item</th>
-                    <th>Price</th>
+                    <th>Price (৳)</th>
                     <th>Qty</th>
-                    <th>Subtotal</th>
+                    <th>Subtotal (৳)</th>
                 </tr>
                 {% for item in ordered_items %}
                 <tr>
                     <td>{{ item.item_name }}</td>
-                    <td>{{ "%.2f"|format(item.price) }} BDT</td>
+                    <td>৳{{ "%.2f"|format(item.price|default(0)) }}</td>
                     <td>{{ item.quantity }}</td>
-                    <td>{{ "%.2f"|format(item.subtotal) }} BDT</td>
+                    <td>৳{{ "%.2f"|format(item.subtotal|default(0)) }}</td>
                 </tr>
                 {% endfor %}
             </table>
 
             <div class="total">
-                <strong>Total: ৳{{ "%.2f"|format(total_price) }}</strong>
+                <strong>Total: ৳{{ "%.2f"|format(total_price|default(0)) }}</strong>
             </div>
 
             <!-- Payment Button -->

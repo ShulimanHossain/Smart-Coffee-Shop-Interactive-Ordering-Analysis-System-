@@ -2,7 +2,6 @@ from flask import Flask, render_template,request,redirect,url_for,jsonify,sessio
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
 from config import Config
-from datetime import datetime
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -244,5 +243,5 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-if __name__ == "__main__":
-    app.run(debug=True)
+if __name__ == '__main__':
+    app.run(host='127.0.0.1', port=5001, debug=True)

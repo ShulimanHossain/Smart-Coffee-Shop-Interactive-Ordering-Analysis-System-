@@ -34,21 +34,24 @@
             margin-bottom: 25px;
         }
 
-        select, button {
+        select, button, a.btn {
             width: 100%;
             padding: 10px;
             border-radius: 8px;
             border: none;
             margin-top: 10px;
+            display: inline-block;
+            text-decoration: none;
+            text-align: center;
         }
         select { background: #44445e; color: #fff; }
-        button {
+        button, a.btn {
             background: #00c6ff;
             color: #fff;
             font-weight: bold;
             cursor: pointer;
         }
-        button:hover { background: #009bd1; }
+        button:hover, a.btn:hover { background: #009bd1; }
 
         .msg {
             background: #222;
@@ -88,6 +91,11 @@
             <p class="success">✔ Payment Method: {{ payment_method }}</p>
             <p>{{ msg }}</p>
         </div>
+
+        <!-- SHOW INVOICE BUTTON AFTER ADMIN CONFIRMS PAYMENT -->
+        <a class="btn" href="{{ url_for('invoice', order_id=order.order_id) }}">
+            View Invoice
+        </a>
         {% endif %}
     </div>
 </body>

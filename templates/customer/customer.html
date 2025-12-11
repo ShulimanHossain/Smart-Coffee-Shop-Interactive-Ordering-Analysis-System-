@@ -52,6 +52,10 @@
 <div class="overlay container mt-4">
     <h1 class="text-center mb-4">Welcome to Smart Cafe</h1>
 
+    {% if error %}
+        <div class="alert alert-danger text-center">{{ error }}</div>
+    {% endif %}
+
     <div class="row">
         <!-- MENU ITEMS -->
         <div class="col-md-8">
@@ -77,10 +81,11 @@
                 <h4>Cart</h4>
 
                 <label>Select Table:</label>
-                <select id="table-select" class="form-select mb-3">
+                <select id="table-select" class="form-select mb-3" {% if previous_items %} disabled {% endif %}>
                     {% for table in tables %}
                         <option value="{{ table.table_no }}"
-                                {% if table.status != 'Free' %} disabled {% endif %}>
+                                {% if order_id and table.table_no == table_no %} selected {% endif %}
+                                {% if table.status != 'Free' and not previous_items %} disabled {% endif %}>
                             Table {{ table.table_no }} - {{ table.status }}
                         </option>
                     {% endfor %}
@@ -107,23 +112,29 @@
 
 
 <script>
+    // Load previous items (if continuing an order)
     const previousItems = JSON.parse(`{{ previous_items | default([]) | tojson | safe }}`);
     let cart = [...previousItems];
 
     const tableSelect = document.getElementById('table-select');
     const tableInput = document.getElementById('order-table-no');
 
-    tableInput.value = tableSelect.value;
-    tableSelect.addEventListener('change', () => {
+    // If user is continuing order → lock table value
+    if (`{{ previous_items | length }}` !== "0") {
         tableInput.value = tableSelect.value;
-    });
+    } else {
+        tableInput.value = tableSelect.value;
+        tableSelect.addEventListener('change', () => {
+            tableInput.value = tableSelect.value;
+        });
+    }
 
     // Add item to cart
     document.querySelectorAll('.menu-item').forEach(card => {
         card.addEventListener('click', function () {
             const id = this.dataset.id;
             const name = this.dataset.name;
-            const price = parseFloat(this.dataset.price);
+            const price = parseFloat(this.dataset.price) || 0;
 
             const existing = cart.find(i => i.item_id == id);
 
@@ -137,9 +148,18 @@
         });
     });
 
-    // REQUIRED FIX (this was missing)
+    // Sync cart with backend session
+    function syncCartWithServer() {
+        fetch("/update_cart", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cart: cart })
+        });
+    }
+
     function updateCart() {
         updateCartUI();
+        syncCartWithServer();
     }
 
     function updateCartUI() {
@@ -151,6 +171,7 @@
         if (cart.length === 0) {
             cartContainer.innerHTML = `<p class="text-muted">No items added yet</p>`;
             totalSpan.textContent = "0.00";
+            document.getElementById("order-cart-data").value = "[]";
             return;
         }
 
@@ -181,10 +202,14 @@
         }
     });
 
-    // Load cart when page opens
+    // 🔥 FIX: Ensure cart_data is updated before submitting form
+    document.getElementById("order-form").addEventListener("submit", function () {
+        document.getElementById("order-cart-data").value = JSON.stringify(cart);
+    });
+
+    // Load UI on page load
     updateCartUI();
 </script>
-
 
 </body>
 </html>
