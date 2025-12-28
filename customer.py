@@ -10,6 +10,16 @@ app.config.from_object(Config)
 app.secret_key='my_key_374'
 mysql=MySQL (app)
 
+@app.route("/api/init")
+def api_init():
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute("SELECT item_id, name, price FROM Menu")
+    menu = cursor.fetchall()
+    cursor.execute("SELECT table_no, status FROM Cafe_tables")
+    tables = cursor.fetchall()
+    cursor.close()
+    return jsonify({"menu": menu, "tables": tables})
+
 @app.route('/')
 def home():
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
@@ -33,7 +43,7 @@ def serialize_order(order):
 @app.route('/place_order', methods=['POST'])
 def place_order():
     table_no = request.form.get('table_no')
-    cart_data = request.form.get('cart_data')
+    cart_data = request.get_json('cart_data')
     cart_items = json.loads(cart_data)
     order_id = request.form.get('order_id')
     session_order_id = session.get('order_id')
@@ -218,7 +228,7 @@ def invoice(order_id):
         order = cursor.fetchone()
         if not order:
             return render_template(
-                "invoice.html",
+                "customer.html",
                 order=None,
                 items=[],
                 error="Order not found"
@@ -243,7 +253,7 @@ def payment(order_id):
         if request.method == "POST":
             method = request.form.get('payment_method')
             if not method:
-                return render_template('payment.html', order=order, payment_done=False, error="Select a payment method")
+                return render_template('customer.html', order=order, payment_done=False, error="Select a payment method")
             cursor.execute("""
                 UPDATE Orders
                 SET payment_method=%s, payment_status='pending'
@@ -253,7 +263,7 @@ def payment(order_id):
             session.pop('order_id', None)
             msg = "Please wait... Admin will confirm your payment shortly"
             return render_template(
-                'payment.html',
+                'customer.html',
                 order=order,
                 payment_done=True,
                 payment_method=method,

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Order Summary</title>
+    <style>
+        body { font-family: Arial; background: #f5f5f5; }
+        .box { width: 60%; margin: auto; background: white; padding: 20px; border-radius: 8px; }
+        button { padding: 8px 14px; background: #2e8b57; color: white; border: none; border-radius: 4px; margin: 5px; }
+    </style>
+</head>
+
+<body>
+
+<div class="box">
+    <h2>🧾 Order Summary</h2>
+    <div id="summary"></div>
+
+    <button onclick="addMore()">Add More Items</button>
+    <button onclick="complete()">Complete Order</button>
+</div>
+
+<script>
+const locked = JSON.parse(sessionStorage.getItem("locked_cart")) || [];
+const newCart = JSON.parse(sessionStorage.getItem("new_cart")) || [];
+
+let html = "<h4>Items</h4><ul>";
+let total = 0;
+
+[...locked, ...newCart].forEach(i => {
+    total += i.price * i.qty;
+    html += `<li>${i.name} x ${i.qty}</li>`;
+});
+
+html += `</ul><h3>Total: ${total}</h3>`;
+document.getElementById("summary").innerHTML = html;
+
+function addMore() {
+    sessionStorage.setItem("order_stage", "adding_more");
+    sessionStorage.setItem("current_cart", "[]");
+    window.location.href = "index.html";
+}
+
+function complete() {
+    sessionStorage.clear();
+    alert("Order Completed!");
+    window.location.href = "index.html";
+}
+</script>
+
+</body>
+</html>

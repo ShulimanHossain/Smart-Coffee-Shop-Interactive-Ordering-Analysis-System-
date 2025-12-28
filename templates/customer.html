@@ -2,24 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart Cafe - Customer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 
-    <!-- Bootstrap CSS -->
+    <!-- Bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 
     <style>
         body {
             background: url("{{ url_for('static', filename='cafe_ml.png') }}") no-repeat center center fixed;
             background-size: cover;
-            height: 100vh;
-            margin: 0;
         }
         .overlay {
-            background-color: rgba(255, 255, 255, 0.55);
+            background-color: rgba(255,255,255,0.6);
             min-height: 100vh;
             padding: 20px;
-            backdrop-filter: blur(4px);
         }
         .menu-item {
             cursor: pointer;
@@ -27,37 +24,23 @@
         }
         .menu-item:hover {
             transform: scale(1.05);
-            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
         }
         .cart {
-            background-color: rgba(255,243,224,0.75);
+            background: rgba(255,243,224,0.8);
             padding: 15px;
             border-radius: 10px;
-            max-height: 80vh;
-            overflow-y: auto;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        }
-        .btn-place-order {
-            background-color: #ff7f50;
-            color: white;
-        }
-        .btn-place-order:hover {
-            background-color: #ff5722;
         }
     </style>
 </head>
 
 <body>
 
-<div class="overlay container mt-4">
+<!-- ===================== MAIN ORDER UI ===================== -->
+<div class="overlay container" id="main-ui">
     <h1 class="text-center mb-4">Welcome to Smart Cafe</h1>
 
-    {% if error %}
-        <div class="alert alert-danger text-center">{{ error }}</div>
-    {% endif %}
-
     <div class="row">
-        <!-- MENU ITEMS -->
+        <!-- MENU -->
         <div class="col-md-8">
             <div class="row g-3">
                 {% for item in menu %}
@@ -75,17 +58,16 @@
             </div>
         </div>
 
-        <!-- CART SECTION -->
+        <!-- CART -->
         <div class="col-md-4">
             <div class="cart">
                 <h4>Cart</h4>
 
-                <label>Select Table:</label>
-                <select id="table-select" class="form-select mb-3" {% if previous_items %} disabled {% endif %}>
+                <label>Select Table</label>
+                <select id="table-select" class="form-select mb-3">
                     {% for table in tables %}
                         <option value="{{ table.table_no }}"
-                                {% if order_id and table.table_no == table_no %} selected {% endif %}
-                                {% if table.status != 'Free' and not previous_items %} disabled {% endif %}>
+                            {% if table.status != 'Free' %}disabled{% endif %}>
                             Table {{ table.table_no }} - {{ table.status }}
                         </option>
                     {% endfor %}
@@ -96,119 +78,134 @@
                 </div>
 
                 <hr>
-                <p class="fw-bold">Total: $<span id="cart-total">0.00</span></p>
+                <strong>Total: $<span id="cart-total">0.00</span></strong>
 
-                <!-- FORM -->
-                <form id="order-form" method="POST" action="{{ url_for('place_order') }}">
-                    <input type="hidden" name="table_no" id="order-table-no">
-                    <input type="hidden" name="cart_data" id="order-cart-data">
-                    <input type="hidden" name="order_id" value="{{ order_id or '' }}">
-                    <button class="btn btn-place-order w-100 mt-2" type="submit">Place Order</button>
-                </form>
+                <button class="btn btn-warning w-100 mt-3"
+                        type="button"
+                        onclick="placeOrder()">
+                    Place Order
+                </button>
             </div>
         </div>
     </div>
 </div>
 
+<!-- ===================== ORDER SUCCESS UI ===================== -->
+<div class="container mt-5" id="order-success" style="display:none;">
+    <div class="card p-4 text-center">
+        <h2 class="text-success">✅ Order Placed Successfully</h2>
+        <p>Order ID: <strong id="success-order-id"></strong></p>
 
+        <div id="success-items" class="text-start mt-3"></div>
+
+        <h4>Total: $<span id="success-total"></span></h4>
+
+        <button class="btn btn-primary mt-3" onclick="location.reload()">
+            Place New Order
+        </button>
+    </div>
+</div>
+
+<!-- ===================== JAVASCRIPT ===================== -->
 <script>
-    // Load previous items (if continuing an order)
-    const previousItems = JSON.parse(`{{ previous_items | default([]) | tojson | safe }}`);
-    let cart = [...previousItems];
+let cart = [];
 
-    const tableSelect = document.getElementById('table-select');
-    const tableInput = document.getElementById('order-table-no');
+/* ADD ITEMS */
+document.querySelectorAll(".menu-item").forEach(item => {
+    item.addEventListener("click", () => {
+        const id = item.dataset.id;
+        const name = item.dataset.name;
+        const price = parseFloat(item.dataset.price);
 
-    // If user is continuing order → lock table value
-    if (`{{ previous_items | length }}` !== "0") {
-        tableInput.value = tableSelect.value;
-    } else {
-        tableInput.value = tableSelect.value;
-        tableSelect.addEventListener('change', () => {
-            tableInput.value = tableSelect.value;
-        });
+        const existing = cart.find(i => i.item_id == id);
+        if (existing) {
+            existing.quantity++;
+        } else {
+            cart.push({ item_id: id, name, price, quantity: 1 });
+        }
+        updateCart();
+    });
+});
+
+/* UPDATE CART UI */
+function updateCart() {
+    const cartDiv = document.getElementById("cart-items");
+    const totalSpan = document.getElementById("cart-total");
+
+    cartDiv.innerHTML = "";
+    let total = 0;
+
+    if (cart.length === 0) {
+        cartDiv.innerHTML = `<p class="text-muted">No items added yet</p>`;
+        totalSpan.textContent = "0.00";
+        return;
     }
 
-    // Add item to cart
-    document.querySelectorAll('.menu-item').forEach(card => {
-        card.addEventListener('click', function () {
-            const id = this.dataset.id;
-            const name = this.dataset.name;
-            const price = parseFloat(this.dataset.price) || 0;
-
-            const existing = cart.find(i => i.item_id == id);
-
-            if (existing) {
-                existing.quantity++;
-            } else {
-                cart.push({ item_id: id, name: name, price: price, quantity: 1 });
-            }
-
-            updateCart();
-        });
+    cart.forEach((item, index) => {
+        total += item.price * item.quantity;
+        cartDiv.innerHTML += `
+            <div class="d-flex justify-content-between mb-2">
+                <span>${item.name} × ${item.quantity}</span>
+                <button class="btn btn-sm btn-danger" onclick="removeItem(${index})">X</button>
+            </div>
+        `;
     });
 
-    // Sync cart with backend session
-    function syncCartWithServer() {
-        fetch("/update_cart", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ cart: cart })
-        });
+    totalSpan.textContent = total.toFixed(2);
+}
+
+function removeItem(index) {
+    cart.splice(index, 1);
+    updateCart();
+}
+
+/* PLACE ORDER — ONLY JS FETCH */
+function placeOrder() {
+    if (cart.length === 0) {
+        alert("Cart is empty");
+        return;
     }
 
-    function updateCart() {
-        updateCartUI();
-        syncCartWithServer();
-    }
+    const tableNo = document.getElementById("table-select").value;
 
-    function updateCartUI() {
-        const cartContainer = document.getElementById("cart-items");
-        const totalSpan = document.getElementById("cart-total");
-
-        cartContainer.innerHTML = "";
-
-        if (cart.length === 0) {
-            cartContainer.innerHTML = `<p class="text-muted">No items added yet</p>`;
-            totalSpan.textContent = "0.00";
-            document.getElementById("order-cart-data").value = "[]";
+    fetch("/place_order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            table_no: tableNo,
+            cart: cart
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) {
+            alert(data.error);
             return;
         }
+        showOrderSuccess(data.order_id);
+    })
+    .catch(() => alert("Order failed"));
+}
 
-        let total = 0;
+/* SHOW SUCCESS SCREEN */
+function showOrderSuccess(orderId) {
+    document.getElementById("main-ui").style.display = "none";
+    document.getElementById("order-success").style.display = "block";
 
-        cart.forEach((item, index) => {
-            cartContainer.innerHTML += `
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span>${item.name} x${item.quantity} - $${(item.price * item.quantity).toFixed(2)}</span>
-                    <button class="btn btn-sm btn-danger remove-btn" data-index="${index}">
-                        Remove
-                    </button>
-                </div>
-            `;
+    document.getElementById("success-order-id").textContent = orderId;
 
-            total += item.price * item.quantity;
-        });
+    let total = 0;
+    const itemsDiv = document.getElementById("success-items");
+    itemsDiv.innerHTML = "";
 
-        totalSpan.textContent = total.toFixed(2);
-        document.getElementById("order-cart-data").value = JSON.stringify(cart);
-    }
-
-    document.addEventListener("click", function (e) {
-        if (e.target.classList.contains("remove-btn")) {
-            let index = e.target.getAttribute("data-index");
-            cart.splice(index, 1);
-            updateCart();
-        }
+    cart.forEach(item => {
+        total += item.price * item.quantity;
+        itemsDiv.innerHTML += `<p>${item.name} × ${item.quantity}</p>`;
     });
 
-    // 🔥 FIX: Ensure cart_data is updated before submitting form
-    document.getElementById("order-form").addEventListener("submit", function () {
-        document.getElementById("order-cart-data").value = JSON.stringify(cart);
-    });
-
-    // Load UI on page load
-    updateCartUI();
+    document.getElementById("success-total").textContent = total.toFixed(2);
+    cart = [];
+}
 </script>
 
 </body>

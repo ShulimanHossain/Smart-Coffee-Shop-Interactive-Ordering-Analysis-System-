@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Café Ordering System</title>
+    <style>
+        body { font-family: Arial; background: #f5f5f5; }
+        .container { width: 80%; margin: auto; background: white; padding: 20px; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border-bottom: 1px solid #ddd; padding: 10px; text-align: center; }
+        button { padding: 6px 12px; background: #2e8b57; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:disabled { background: gray; }
+        .locked { color: gray; }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+    <h2>☕ Café Ordering System</h2>
+
+    <h3>Menu</h3>
+    <table>
+        <tr>
+            <th>Item</th>
+            <th>Price</th>
+            <th>Qty</th>
+            <th>Add</th>
+        </tr>
+
+        <tr>
+            <td>Espresso</td>
+            <td>150</td>
+            <td><input type="number" id="q1" value="1" min="1"></td>
+            <td><button onclick="addItem('Espresso',150,'q1')">Add</button></td>
+        </tr>
+
+        <tr>
+            <td>Cappuccino</td>
+            <td>250</td>
+            <td><input type="number" id="q2" value="1" min="1"></td>
+            <td><button onclick="addItem('Cappuccino',250,'q2')">Add</button></td>
+        </tr>
+    </table>
+
+    <h3>Cart</h3>
+    <div id="lockedCart"></div>
+    <div id="cart"></div>
+    <h4>Total: <span id="total">0</span></h4>
+
+    <button onclick="placeOrder()">Place Order</button>
+</div>
+
+<script>
+let cart = JSON.parse(sessionStorage.getItem("current_cart")) || [];
+let lockedCart = JSON.parse(sessionStorage.getItem("locked_cart")) || [];
+let stage = sessionStorage.getItem("order_stage") || "initial";
+
+function addItem(name, price, qtyId) {
+    const qty = parseInt(document.getElementById(qtyId).value);
+    cart.push({ name, price, qty });
+    save();
+    render();
+}
+
+function save() {
+    sessionStorage.setItem("current_cart", JSON.stringify(cart));
+}
+
+function render() {
+    let html = "<ul>";
+    let total = 0;
+
+    cart.forEach(i => {
+        total += i.price * i.qty;
+        html += `<li>${i.name} x ${i.qty}</li>`;
+    });
+
+    html += "</ul>";
+    document.getElementById("cart").innerHTML = html;
+    document.getElementById("total").innerText = total;
+
+    if (stage === "adding_more") {
+        let lockedHtml = "<h4>Previous Items (Locked)</h4><ul>";
+        lockedCart.forEach(i => {
+            lockedHtml += `<li class="locked">${i.name} x ${i.qty}</li>`;
+        });
+        lockedHtml += "</ul>";
+        document.getElementById("lockedCart").innerHTML = lockedHtml;
+    }
+}
+
+function placeOrder() {
+    if (cart.length === 0) {
+        alert("Cart is empty!");
+        return;
+    }
+
+    if (stage === "initial") {
+        sessionStorage.setItem("locked_cart", JSON.stringify(cart));
+        sessionStorage.setItem("order_stage", "summary");
+        sessionStorage.removeItem("current_cart");
+    } else {
+        sessionStorage.setItem("new_cart", JSON.stringify(cart));
+        sessionStorage.setItem("order_stage", "final_summary");
+    }
+
+    window.location.href = "summary.html";
+}
+
+render();
+</script>
+
+</body>
+</html>
