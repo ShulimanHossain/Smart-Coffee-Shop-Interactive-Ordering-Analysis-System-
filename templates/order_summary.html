@@ -1,51 +1,235 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Order Summary</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { font-family: Arial; background: #f5f5f5; }
-        .box { width: 60%; margin: auto; background: white; padding: 20px; border-radius: 8px; }
-        button { padding: 8px 14px; background: #2e8b57; color: white; border: none; border-radius: 4px; margin: 5px; }
+        body { 
+            font-family: Arial, sans-serif; 
+            background: #f5f5f5; 
+        }
+        .payment-waiting {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .payment-waiting h4 {
+            color: #856404;
+            margin-bottom: 15px;
+        }
+        .spinner-border {
+            display: inline-block;
+            width: 2rem;
+            height: 2rem;
+            vertical-align: text-bottom;
+            border: 0.25em solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            animation: spinner-border 0.75s linear infinite;
+        }
+        @keyframes spinner-border {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
+<body class="bg-light">
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card shadow">
+                    <div class="card-header bg-success text-white text-center">
+                        <h3 class="mb-0">Order Placed Successfully!</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-4">
+                            <div class="col-6">
+                                <h5>Order ID: #{{ order.order_id }}</h5>
+                                <p class="text-muted mb-0">Status: <span class="badge bg-info text-dark">{{ order.status }}</span></p>
+                            </div>
+                            <div class="col-6 text-end">
+                                <h5>Table: {{ order.table_no }}</h5>
+                            </div>
+                        </div>
 
-<body>
+                        <h5 class="border-bottom pb-2">Items Ordered</h5>
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Item Name</th>
+                                    <th class="text-center">Quantity</th>
+                                    <th class="text-end">Price</th>
+                                    <th class="text-end">Subtotal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in items %}
+                                <tr>
+                                    <td>{{ item.name }}</td>
+                                    <td class="text-center">{{ item.quantity }}</td>
+                                    <td class="text-end">${{ "%.2f"|format(item.price) }}</td>
+                                    <td class="text-end">${{ "%.2f"|format(item.price * item.quantity) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot>
+                                <tr class="table-active">
+                                    <th colspan="3" class="text-end">Total Bill:</th>
+                                    <th class="text-end">${{ "%.2f"|format(order.total_bill) }}</th>
+                                </tr>
+                            </tfoot>
+                        </table>
 
-<div class="box">
-    <h2>🧾 Order Summary</h2>
-    <div id="summary"></div>
+                        {% if order.payment_status == 'pending' and order.payment_method %}
+                        <!-- Payment Waiting Section -->
+                        <div class="payment-waiting" id="payment-waiting">
+                            <h4>⏳ Waiting for Payment Confirmation</h4>
+                            <p><strong>Payment Method:</strong> {{ order.payment_method|title }}</p>
+                            <p>A waiter will receive your payment. Please wait for confirmation.</p>
+                            <div class="spinner-border text-warning" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-3"><small>This page will automatically refresh when payment is confirmed.</small></p>
+                        </div>
+                        {% elif order.payment_status == 'paid' %}
+                        <!-- Payment Confirmed - Show Full Receipt -->
+                        <div class="alert alert-success">
+                            <h4>✅ Payment Confirmed!</h4>
+                            <p>Thank you for your payment. Your order has been completed.</p>
+                        </div>
+                        <div class="card mt-3">
+                            <div class="card-header bg-primary text-white">
+                                <h5 class="mb-0">📄 Order Receipt</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row mb-3">
+                                    <div class="col-6">
+                                        <strong>Order Number:</strong> #{{ order.order_id }}
+                                    </div>
+                                    <div class="col-6 text-end">
+                                        <strong>Table:</strong> {{ order.table_no }}
+                                    </div>
+                                </div>
+                                <div class="row mb-3">
+                                    <div class="col-6">
+                                        <strong>Order Date:</strong> {{ order.order_date }}
+                                    </div>
+                                    <div class="col-6 text-end">
+                                        <strong>Order Time:</strong> {{ order.order_time }}
+                                    </div>
+                                </div>
+                                <div class="row mb-3">
+                                    <div class="col-6">
+                                        <strong>Payment Method:</strong> {{ order.payment_method|title }}
+                                    </div>
+                                    <div class="col-6 text-end">
+                                        <strong>Status:</strong> <span class="badge bg-success">Completed</span>
+                                    </div>
+                                </div>
+                                <hr>
+                                <h6>Items:</h6>
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Item</th>
+                                            <th class="text-center">Qty</th>
+                                            <th class="text-end">Price</th>
+                                            <th class="text-end">Subtotal</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for item in items %}
+                                        <tr>
+                                            <td>{{ item.name }}</td>
+                                            <td class="text-center">{{ item.quantity }}</td>
+                                            <td class="text-end">${{ "%.2f"|format(item.price) }}</td>
+                                            <td class="text-end">${{ "%.2f"|format(item.price * item.quantity) }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr class="table-active">
+                                            <th colspan="3" class="text-end">Total:</th>
+                                            <th class="text-end">${{ "%.2f"|format(order.total_bill) }}</th>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                        {% else %}
+                        <!-- Payment Selection -->
+                        <div class="d-grid gap-2 mt-4">
+                            <a href="/?order_id={{ order.order_id }}" class="btn btn-success btn-lg">Add More Items</a>
+                            <hr>
+                            <h5 class="text-center">Select Payment Method</h5>
+                            <div class="btn-group-vertical" role="group">
+                                <button type="button" class="btn btn-primary btn-lg" data-payment-method="cash" data-order-id="{{ order.order_id }}" onclick="requestPayment(this)">
+                                    💵 Pay with Cash
+                                </button>
+                                <button type="button" class="btn btn-primary btn-lg" data-payment-method="card" data-order-id="{{ order.order_id }}" onclick="requestPayment(this)">
+                                    💳 Pay with Card
+                                </button>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    <button onclick="addMore()">Add More Items</button>
-    <button onclick="complete()">Complete Order</button>
-</div>
+    <script>
+        function requestPayment(button) {
+            const method = button.getAttribute('data-payment-method');
+            const orderId = button.getAttribute('data-order-id');
+            
+            if (!confirm(`Confirm payment with ${method.toUpperCase()}?`)) {
+                return;
+            }
+            
+            fetch(`/order/${orderId}/request_payment`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ payment_method: method })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Reload page to show waiting message
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + (data.error || 'Failed to request payment'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Network error occurred.');
+            });
+        }
 
-<script>
-const locked = JSON.parse(sessionStorage.getItem("locked_cart")) || [];
-const newCart = JSON.parse(sessionStorage.getItem("new_cart")) || [];
-
-let html = "<h4>Items</h4><ul>";
-let total = 0;
-
-[...locked, ...newCart].forEach(i => {
-    total += i.price * i.qty;
-    html += `<li>${i.name} x ${i.qty}</li>`;
-});
-
-html += `</ul><h3>Total: ${total}</h3>`;
-document.getElementById("summary").innerHTML = html;
-
-function addMore() {
-    sessionStorage.setItem("order_stage", "adding_more");
-    sessionStorage.setItem("current_cart", "[]");
-    window.location.href = "index.html";
-}
-
-function complete() {
-    sessionStorage.clear();
-    alert("Order Completed!");
-    window.location.href = "index.html";
-}
-</script>
-
+        // Auto-refresh if waiting for payment
+        const paymentStatus = '{{ order.payment_status }}';
+        const paymentMethod = '{{ order.payment_method }}';
+        const orderIdStr = '{{ order.order_id }}';
+        const orderId = parseInt(orderIdStr);
+        
+        if (paymentStatus === 'pending' && paymentMethod) {
+            setInterval(function() {
+                const checkUrl = '/order/' + orderId + '/check_payment';
+                fetch(checkUrl)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.payment_status === 'paid') {
+                            window.location.reload();
+                        }
+                    })
+                    .catch(error => console.error('Error checking payment:', error));
+            }, 3000); // Check every 3 seconds
+        }
+    </script>
 </body>
 </html>

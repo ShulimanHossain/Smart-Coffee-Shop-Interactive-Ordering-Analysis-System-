@@ -61,33 +61,67 @@ h2.page-title {
 /* Card Grid */
 .card-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 15px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
 }
 .card {
     background: #fff;
     border-radius: 10px;
-    padding: 15px;
-    text-align: center;
+    padding: 20px;
     box-shadow: 0 6px 15px rgba(0,0,0,0.1);
-    cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
+    position: relative;
 }
 .card:hover {
-    transform: scale(1.03);
+    transform: scale(1.02);
     box-shadow: 0 10px 20px rgba(0,0,0,0.15);
 }
-.card h3 { margin: 10px 0; }
+.card.payment-pending {
+    border: 3px solid #ffc107;
+    background: #fffbf0;
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0%, 100% { box-shadow: 0 6px 15px rgba(255, 193, 7, 0.3); }
+    50% { box-shadow: 0 6px 25px rgba(255, 193, 7, 0.6); }
+}
+.card h3 { margin: 10px 0; color: #333; }
 .card p { margin: 5px 0; color: #555; }
+.payment-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: #ffc107;
+    color: #856404;
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 0.8em;
+    font-weight: bold;
+    animation: blink 1s infinite;
+}
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
 .card button {
-    padding: 6px 12px;
+    padding: 8px 16px;
     border: none;
     border-radius: 6px;
     background: #28a745;
     color: #fff;
     cursor: pointer;
+    margin-top: 10px;
+    width: 100%;
+    font-weight: bold;
 }
 .card button:hover { background: #218838; }
+.card button.btn-confirm-payment {
+    background: #ffc107;
+    color: #856404;
+}
+.card button.btn-confirm-payment:hover {
+    background: #ffb300;
+}
 
 /* Form Cards */
 .form-card {
@@ -130,6 +164,13 @@ input:focus, select:focus {
     max-width: 650px;
     margin: 0 auto 20px auto;
 }
+
+.empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+    font-size: 1.1em;
+}
 </style>
 </head>
 <body>
@@ -143,16 +184,12 @@ input:focus, select:focus {
     <a href="?action=update_stock" class="{% if action=='update_stock' %}active{% endif %}">Update Stock</a>
     <a href="?action=change_price" class="{% if action=='change_price' %}active{% endif %}">Change Price</a>
     <a href="?action=view_orders" class="{% if action=='view_orders' %}active{% endif %}">View Orders</a>
-
-    <!-- NEW CHANGE PASSWORD OPTION -->
-    <a href="?action=change_password" class="{% if action=='change_password' %}active{% endif %}">
-        Change Password
-    </a>
+    <a href="?action=change_password" class="{% if action=='change_password' %}active{% endif %}">Change Password</a>
 </div>
 
 <div class="content">
     <h2 class="page-title">
-        {% if action == 'active' %}Active Orders
+        {% if action == 'active' %}Live Orders Dashboard
         {% elif action == 'add' %}Add Item
         {% elif action=='view_menu' %}Menu
         {% elif action=='delete_menu' %}Delete Item
@@ -165,20 +202,49 @@ input:focus, select:focus {
 
     {% if message %}<div class="message">{{ message }}</div>{% endif %}
 
-    <!-- Active Orders -->
+    <!-- Active Orders / Live Dashboard -->
     {% if action == 'active' or action=='view_orders' %}
-    <div class="card-grid">
+    <div class="card-grid" id="orders-container">
         {% for order in active_order %}
-        <div class="card" onclick="location.href='/admin/order/{{ order.order_id }}'">
+        <div class="card {% if order.payment_status == 'pending' %}payment-pending{% endif %}">
+            {% if order.payment_status == 'pending' %}
+            <div class="payment-badge">💰 Payment Request</div>
+            {% endif %}
             <h3>Order #{{ order.order_id }}</h3>
-            <p>Table: {{ order.table_no }}</p>
-            <p>Status: {{ order.status }}</p>
-            <p>Total: ${{ order.total }}</p>
-            <button>View Details</button>
+            <p><strong>Table:</strong> {{ order.table_no }}</p>
+            <p><strong>Status:</strong> 
+                <span class="badge {% if order.status == 'active' %}bg-info{% else %}bg-secondary{% endif %}">
+                    {{ order.status }}
+                </span>
+            </p>
+            <p><strong>Total:</strong> ${{ "%.2f"|format(order.total_bill) }}</p>
+            {% if order.payment_method %}
+            <p><strong>Payment Method:</strong> {{ order.payment_method|title }}</p>
+            <p><strong>Payment Status:</strong> 
+                <span class="badge {% if order.payment_status == 'pending' %}bg-warning{% elif order.payment_status == 'paid' %}bg-success{% else %}bg-secondary{% endif %}">
+                    {{ order.payment_status|title if order.payment_status else 'Not Selected' }}
+                </span>
+            </p>
+            {% endif %}
+            {% if order.order_date %}
+            <p><strong>Date:</strong> {{ order.order_date }}</p>
+            {% endif %}
+            {% if order.order_time %}
+            <p><strong>Time:</strong> {{ order.order_time }}</p>
+            {% endif %}
+            {% if order.payment_status == 'pending' %}
+            <button class="btn-confirm-payment" data-order-id="{{ order.order_id }}" onclick="confirmPayment(this)">
+                ✅ Confirm Payment
+            </button>
+            {% else %}
+            <button data-order-id="{{ order.order_id }}" onclick="viewOrderDetails(this)">View Details</button>
+            {% endif %}
         </div>
         {% endfor %}
         {% if active_order|length == 0 %}
-        <p>No orders available.</p>
+        <div class="empty-state">
+            <p>No active orders at the moment.</p>
+        </div>
         {% endif %}
     </div>
     {% endif %}
@@ -195,7 +261,9 @@ input:focus, select:focus {
         </div>
         {% endfor %}
         {% if menu|length == 0 %}
-        <p>No items available.</p>
+        <div class="empty-state">
+            <p>No items available.</p>
+        </div>
         {% endif %}
     </div>
     {% endif %}
@@ -259,5 +327,58 @@ input:focus, select:focus {
     {% endif %}
 
 </div>
+
+<script>
+    function confirmPayment(button) {
+        const orderId = button.getAttribute('data-order-id');
+        if (!confirm(`Confirm payment for Order #${orderId}? This will complete the order and free the table.`)) {
+            return;
+        }
+        
+        fetch(`/admin/confirm_payment/${orderId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Payment confirmed! Order completed and table freed.');
+                // Reload to update the dashboard
+                window.location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Failed to confirm payment'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Network error occurred.');
+        });
+    }
+
+    function viewOrderDetails(button) {
+        const orderId = button.getAttribute('data-order-id');
+        window.location.href = `/admin/order/${orderId}`;
+    }
+
+    // Auto-refresh live orders every 5 seconds
+    const currentAction = '{{ action }}';
+    if (currentAction === 'active' || currentAction === 'view_orders') {
+        setInterval(function() {
+            fetch('/admin/live_orders')
+                .then(response => response.json())
+                .then(data => {
+                    // Update the orders display
+                    updateOrdersDisplay(data.orders);
+                })
+                .catch(error => console.error('Error fetching live orders:', error));
+        }, 5000); // Refresh every 5 seconds
+    }
+
+    function updateOrdersDisplay(orders) {
+        // This function can be enhanced to update the DOM without full page reload
+        // For now, we'll just log - full reload happens on payment confirmation
+        console.log('Orders updated:', orders.length);
+    }
+</script>
 </body>
 </html>
