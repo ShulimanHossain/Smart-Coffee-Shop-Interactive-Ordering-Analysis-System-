@@ -10,6 +10,7 @@ mysql=MySQL (app)
 
 @app.route('/',methods=['GET','POST'])
 def home():
+    order_id = request.args.get('order_id', type=int)
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     try:
                cursor.execute("""SELECT table_no, status FROM Cafe_tables""")
@@ -18,9 +19,24 @@ def home():
                cursor.execute("""SELECT  item_id, name, price FROM Menu""")
                menu=cursor.fetchall()
                
+               previous_items = []
+               locked_table_no = None
+               if order_id:
+                   cursor.execute("SELECT table_no, status FROM Orders WHERE order_id=%s", (order_id,))
+                   order = cursor.fetchone()
+                   if order and order["status"] == "active":
+                       locked_table_no = order["table_no"]
+                       cursor.execute("""
+                           SELECT OD.item_id, M.name, OD.quantity, M.price
+                           FROM Order_details OD
+                           JOIN Menu M ON M.item_id = OD.item_id
+                           WHERE OD.order_id = %s
+                       """, (order_id,))
+                       previous_items = cursor.fetchall()
+               
     finally:
                cursor.close()
-    return render_template("home.html",table=table,menu=menu)
+    return render_template("home.html",table=table,menu=menu,order_id=order_id,previous_items=previous_items,locked_table_no=locked_table_no)
 
 @app.route('/check_stock',methods=['POST'])
 def check_stock():
@@ -28,15 +44,18 @@ def check_stock():
          item_id=data.get("item_id")
          quantity=data.get("quantity",1)
          cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-         cursor.execute("""SELECT  Ingredients.quantity, Item_ingredients.quantity_needed
-                        FROM Item_ingredients 
-                        JOIN Ingredients ON Item_ingredients.ing_id=Ingredients.ing_id
-                        WHERE Item_ingredients.item_id=%s""",(item_id,))
-         ingredient=cursor.fetchall()
-         for ing in ingredient :
-                 if ing["quantity"] < ing["quantity_needed"] * quantity:
-                         return "Not enough ingredients"
-         return jsonify({"available": True})
+         try:
+             cursor.execute("""SELECT  Ingredients.quantity, Item_ingredients.quantity_needed
+                            FROM Item_ingredients 
+                            JOIN Ingredients ON Item_ingredients.ing_id=Ingredients.ing_id
+                            WHERE Item_ingredients.item_id=%s""",(item_id,))
+             ingredient=cursor.fetchall()
+             for ing in ingredient :
+                     if ing["quantity"] < ing["quantity_needed"] * quantity:
+                             return "Not enough ingredients"
+             return jsonify({"available": True})
+         finally:
+             cursor.close()
 
 @app.route('/order/create',methods=['POST'])
 def create_order():
@@ -45,31 +64,47 @@ def create_order():
          table_no=data["table_no"]
          
          cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-         
-         total_price=0.0
-         for item in cart:
-           item_id=item["item_id"]
-                 
-           cursor.execute("""SELECT  Ingredients.quantity, Item_ingredients.quantity_needed
-                            FROM Item_ingredients 
-                          JOIN Ingredients ON Item_ingredients.ing_id=Ingredients.ing_id
-                          WHERE Item_ingredients.item_id=%s""",(item_id,))
-           ingredient=cursor.fetchall()
-           for ing in ingredient :
-                   available = ing["quantity"]
-                   required = ing["quantity_needed"]
-                   if available < required * item["quantity"]:
-                           return "Not enough ingredients"
-                   
-           total_price+=item["price"]* item["quantity"]
+         try:
+             # Check if table is already booked
+             cursor.execute("SELECT status FROM Cafe_tables WHERE table_no=%s", (table_no,))
+             table = cursor.fetchone()
+             if not table:
+                 return jsonify({"error": "Table not found"}), 404
+             if table["status"] == "Booked":
+                 return jsonify({"error": "Table already booked, please select another table"}), 409
+             
+             total_price=0.0
+             for item in cart:
+               item_id=item["item_id"]
+                     
+               cursor.execute("""SELECT  Ingredients.quantity, Item_ingredients.quantity_needed
+                                FROM Item_ingredients 
+                              JOIN Ingredients ON Item_ingredients.ing_id=Ingredients.ing_id
+                              WHERE Item_ingredients.item_id=%s""",(item_id,))
+               ingredient=cursor.fetchall()
+               for ing in ingredient :
+                       available = ing["quantity"]
+                       required = ing["quantity_needed"]
+                       if available < required * item["quantity"]:
+                               mysql.connection.rollback()
+                               return jsonify({"error": "Not enough ingredients"}), 400
+                       
+               total_price+=item["price"]* item["quantity"]
 
-         cursor.execute("""
-           INSERT INTO Orders (table_no, total_bill, status)
-          VALUES (%s, %s, 'active')
-           """, (table_no, total_price))
-         order_id = cursor.lastrowid
-         update_stock_order_save(cursor,cart,order_id)
-         return jsonify({"order_id": order_id})
+             cursor.execute("""
+               INSERT INTO Orders (table_no, total_bill, status)
+              VALUES (%s, %s, 'active')
+               """, (table_no, total_price))
+             order_id = cursor.lastrowid
+             update_stock_order_save(cursor,cart,order_id)
+             cursor.execute("UPDATE Cafe_tables SET status='Booked' WHERE table_no=%s", (table_no,))
+             mysql.connection.commit()
+             return jsonify({"order_id": order_id})
+         except Exception as e:
+             mysql.connection.rollback()
+             return jsonify({"error": str(e)}), 500
+         finally:
+             cursor.close()
 
 @app.route('/order/<int:order_id>')
 def get_order(order_id):
@@ -114,15 +149,19 @@ def add_more_items(order_id):
                          available = ing["quantity"]
                          required = ing["quantity_needed"]
                          if available < required * item["quantity"]:
-                            return "Not enough ingredients"
+                            mysql.connection.rollback()
+                            return jsonify({"error": "Not enough ingredients"}), 400
                    
                        total_price+=item["price"]* item["quantity"]
                 update_stock_order_save(cursor, cart, order_id)
                 cursor.execute("UPDATE Orders SET total_bill = total_bill + %s WHERE order_id = %s", (total_price, order_id))
-                
+                mysql.connection.commit()
+                return jsonify({"order_id": order_id, "message": "Items added successfully"})
+           except Exception as e:
+                mysql.connection.rollback()
+                return jsonify({"error": str(e)}), 500
            finally:
                   cursor.close()
-           return jsonify({"message": "Items added successfully"})
 
 def update_stock_order_save(cursor, cart, order_id):
     for item in cart:
@@ -145,30 +184,93 @@ def update_stock_order_save(cursor, cart, order_id):
             """, (ing["quantity_needed"] * item["quantity"], ing["ing_id"]))
 @app.route("/order/<int:order_id>/finalize", methods=["POST"])
 def finalize_order(order_id):
-
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-
-    cursor.execute("UPDATE Orders SET status='completed' WHERE order_id=%s", (order_id,))
-
-    return jsonify({"message": "Order finalized"})
+    try:
+        cursor.execute("SELECT table_no FROM Orders WHERE order_id=%s", (order_id,))
+        order = cursor.fetchone()
+        if not order:
+            return jsonify({"error": "Order not found"}), 404
+        
+        cursor.execute("UPDATE Orders SET status='completed' WHERE order_id=%s", (order_id,))
+        cursor.execute("UPDATE Cafe_tables SET status='Free' WHERE table_no=%s", (order["table_no"],))
+        mysql.connection.commit()
+        return jsonify({"message": "Order finalized"})
+    except Exception as e:
+        mysql.connection.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
 @app.route("/order/<int:order_id>/summary")
 def order_summary(order_id):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    try:
+        cursor.execute("SELECT * FROM Orders WHERE order_id=%s", (order_id,))
+        order = cursor.fetchone()
+        
+        if not order:
+            return "Order not found", 404
 
-    cursor.execute("SELECT * FROM Orders WHERE order_id=%s", (order_id,))
-    order = cursor.fetchone()
+        cursor.execute("""
+            SELECT M.name, OD.quantity, M.price
+            FROM Order_details OD
+            JOIN Menu M ON M.item_id = OD.item_id
+            WHERE OD.order_id = %s
+        """, (order_id,))
+        items = cursor.fetchall()
 
-    cursor.execute("""
-        SELECT M.name, OD.quantity, M.price
-        FROM Order_details OD
-        JOIN Menu M ON M.item_id = OD.item_id
-        WHERE OD.order_id = %s
-    """, (order_id,))
-    items = cursor.fetchall()
+        return render_template("order_summary.html", order=order, items=items)
+    finally:
+        cursor.close()
 
-    cursor.close()
+@app.route("/order/<int:order_id>/request_payment", methods=["POST"])
+def request_payment(order_id):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    try:
+        data = request.get_json()
+        payment_method = data.get("payment_method")
+        
+        if payment_method not in ['cash', 'card']:
+            return jsonify({"error": "Invalid payment method"}), 400
+        
+        cursor.execute("SELECT status FROM Orders WHERE order_id=%s", (order_id,))
+        order = cursor.fetchone()
+        
+        if not order:
+            return jsonify({"error": "Order not found"}), 404
+        
+        if order["status"] != "active":
+            return jsonify({"error": "Order is not active"}), 400
+        
+        cursor.execute("""
+            UPDATE Orders 
+            SET payment_method=%s, payment_status='pending' 
+            WHERE order_id=%s
+        """, (payment_method, order_id))
+        mysql.connection.commit()
+        
+        return jsonify({"success": True, "message": "Payment request submitted"})
+    except Exception as e:
+        mysql.connection.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
 
-    return render_template("order_summary.html", order=order, items=items)
+@app.route("/order/<int:order_id>/check_payment", methods=["GET"])
+def check_payment(order_id):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    try:
+        cursor.execute("SELECT payment_status, payment_method FROM Orders WHERE order_id=%s", (order_id,))
+        order = cursor.fetchone()
+        
+        if not order:
+            return jsonify({"error": "Order not found"}), 404
+        
+        return jsonify({
+            "payment_status": order["payment_status"],
+            "payment_method": order["payment_method"]
+        })
+    finally:
+        cursor.close()
 
 
 if __name__ =="__main__":
