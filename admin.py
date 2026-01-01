@@ -153,12 +153,27 @@ def admin_dashboard(admin_id):
         """)
         active_order = cursor.fetchall()
         
+        # Fetch menu if needed for menu-related actions
+        menu = []
+        if action in ['view_menu', 'delete_menu', 'update_stock', 'change_price']:
+            cursor.execute("SELECT * FROM Menu")
+            menu = cursor.fetchall()
+        
+        # Fetch ingredients if needed for Add Item form
+        ingredients = []
+        if action == 'add':
+            cursor.execute("SELECT ing_id, name, quantity, unit FROM Ingredients ORDER BY name")
+            ingredients = cursor.fetchall()
+        
         cursor.close()
-        return render_template('admin/admin_dashboard.html', 
+        return render_template('admin_dashboard.html', 
                              admin_id=admin_id, 
                              tables=table, 
                              active_order=active_order,
-                             action=action)
+                             menu=menu,
+                             ingredients=ingredients,
+                             action=action,
+                             manage_item=False)
     except Exception as e:
         cursor.close()
         return f"Error: {str(e)}", 500
@@ -187,46 +202,161 @@ def changepass(admin_id):
              
      return redirect(url_for('admin_dashboard', admin_id=admin_id, action='change_password', message=message))
 
-@app.route('/admin/<int:admin_id>/menu')
+@app.route('/admin/<string:admin_id>/menu')
 def view_menu(admin_id):
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute("SELECT * FROM Menu")
     menu=cursor.fetchall()
-    return render_template('admin/admin_dashboard.html',admin_id=admin_id,menu=menu)
+    return render_template('admin_dashboard.html',admin_id=admin_id,menu=menu)
 
-@app.route('/admin/<int:admin_id>/add_item', methods=['POST'])
+@app.route('/admin/<string:admin_id>/add_item', methods=['POST'])
 def add_item(admin_id):
     name = request.form.get('name')
     price = float(request.form.get('price'))
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     message=''
-    cursor.execute("INSERT INTO Menu (name, price) VALUES (%s, %s)", (name, price))
-    mysql.connection.commit()
-    item_id = cursor.lastrowid 
-
-    ingredient_names = request.form.getlist('ingredient_name[]')
-    ingredient_quantities = request.form.getlist('ingredient_quantity[]')
-
-    for ing_name, qty in zip(ingredient_names, ingredient_quantities):
-
-        cursor.execute("SELECT ing_id FROM Ingredients WHERE name = %s", (ing_name,))
-        result = cursor.fetchone()
-
-        if result:
-            ing_id = result['ing_id']
-        else:
-            cursor.execute("INSERT INTO Ingredients (name, quantity, unit) VALUES (%s, %s, %s)", (ing_name, 0, 'unit'))
-            mysql.connection.commit()
-            ing_id = cursor.lastrowid
-            message="Item added successfully"
-
-        cursor.execute("INSERT INTO Item_ingredients (item_id, ing_id, quantity_needed) VALUES (%s, %s, %s)", (item_id, ing_id, qty))
-        mysql.connection.commit()
-        message="Item added successfully"
     
-    cursor.close()
-    return redirect(url_for('admin_dashboard', admin_id=admin_id, action='add_item', message=message))
+    try:
+        # Insert the menu item
+        cursor.execute("INSERT INTO Menu (name, price) VALUES (%s, %s)", (name, price))
+        mysql.connection.commit()
+        item_id = cursor.lastrowid 
 
+        # Handle ingredients - can be existing ingredient IDs or new ingredient data
+        ingredient_ids = request.form.getlist('ingredient_id[]')
+        ingredient_quantities = request.form.getlist('ingredient_quantity[]')
+        new_ingredient_names = request.form.getlist('new_ingredient_name[]')
+        new_ingredient_quantities = request.form.getlist('new_ingredient_quantity[]')
+        new_ingredient_units = request.form.getlist('new_ingredient_unit[]')
+
+        # Process existing ingredients (selected from dropdown)
+        for ing_id, qty in zip(ingredient_ids, ingredient_quantities):
+            if ing_id and qty:  # Skip empty values
+                cursor.execute("INSERT INTO Item_ingredients (item_id, ing_id, quantity_needed) VALUES (%s, %s, %s)", 
+                             (item_id, int(ing_id), float(qty)))
+                mysql.connection.commit()
+
+        # Process new ingredients (added via "Add New Ingredient")
+        for ing_name, qty, unit in zip(new_ingredient_names, new_ingredient_quantities, new_ingredient_units):
+            if ing_name and qty and unit:  # Skip empty values
+                # Check if ingredient already exists
+                cursor.execute("SELECT ing_id FROM Ingredients WHERE name = %s", (ing_name,))
+                result = cursor.fetchone()
+                
+                if result:
+                    ing_id = result['ing_id']
+                else:
+                    # Insert new ingredient
+                    cursor.execute("INSERT INTO Ingredients (name, quantity, unit) VALUES (%s, %s, %s)", 
+                                 (ing_name, 0, unit))
+                    mysql.connection.commit()
+                    ing_id = cursor.lastrowid
+                
+                # Link ingredient to item
+                cursor.execute("INSERT INTO Item_ingredients (item_id, ing_id, quantity_needed) VALUES (%s, %s, %s)", 
+                             (item_id, ing_id, float(qty)))
+                mysql.connection.commit()
+
+        message = "Item added successfully"
+        cursor.close()
+        return redirect(url_for('admin_dashboard', admin_id=admin_id, action='add', message=message))
+    except Exception as e:
+        mysql.connection.rollback()
+        message = f"Error adding item: {str(e)}"
+        cursor.close()
+        return redirect(url_for('admin_dashboard', admin_id=admin_id, action='add', message=message))
+
+
+@app.route('/admin/<string:admin_id>/item/<int:item_id>', methods=['GET', 'POST'])
+def manage_item(admin_id, item_id):
+    action = request.args.get('action', 'view')
+    message = request.args.get('message', '')
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    
+    try:
+        # Get item details
+        cursor.execute("SELECT * FROM Menu WHERE item_id=%s", (item_id,))
+        item = cursor.fetchone()
+        
+        if not item:
+            return "Item not found", 404
+        
+        if request.method == 'POST':
+            if action == 'delete_menu':
+                try:
+                    cursor.execute('DELETE FROM Menu WHERE item_id=%s', (item_id,))
+                    mysql.connection.commit()
+                    message = "Item deleted successfully"
+                    cursor.close()
+                    return redirect(url_for('admin_dashboard', admin_id=admin_id, action='delete_menu', message=message))
+                except Exception as e:
+                    mysql.connection.rollback()
+                    message = f"Error deleting item: {str(e)}"
+            
+            elif action == 'change_price':
+                newprice = request.form.get('newprice')
+                try:
+                    cursor.execute('UPDATE Menu SET price=%s WHERE item_id=%s', (newprice, item_id))
+                    mysql.connection.commit()
+                    message = "Price changed successfully"
+                    cursor.close()
+                    return redirect(url_for('admin_dashboard', admin_id=admin_id, action='change_price', message=message))
+                except Exception as e:
+                    mysql.connection.rollback()
+                    message = f"Error changing price: {str(e)}"
+            
+            elif action == 'update_stock':
+                # Get ingredients for this item
+                cursor.execute("""
+                    SELECT i.ing_id, i.name, i.quantity, i.unit, ii.quantity_needed
+                    FROM Ingredients i
+                    JOIN Item_ingredients ii ON i.ing_id = ii.ing_id
+                    WHERE ii.item_id = %s
+                """, (item_id,))
+                ingredients = cursor.fetchall()
+                
+                # Update each ingredient quantity
+                for ing in ingredients:
+                    ing_id = ing['ing_id']
+                    new_quantity = request.form.get(f'quantity_{ing_id}')
+                    if new_quantity:
+                        try:
+                            cursor.execute("UPDATE Ingredients SET quantity=%s WHERE ing_id=%s", (new_quantity, ing_id))
+                        except Exception as e:
+                            mysql.connection.rollback()
+                            message = f"Error updating stock: {str(e)}"
+                            cursor.close()
+                            return redirect(url_for('manage_item', admin_id=admin_id, item_id=item_id, action='update_stock', message=message))
+                
+                mysql.connection.commit()
+                message = "Stock updated successfully"
+                cursor.close()
+                return redirect(url_for('admin_dashboard', admin_id=admin_id, action='update_stock', message=message))
+        
+        # GET request - show form
+        if action == 'update_stock':
+            # Get ingredients for this item
+            cursor.execute("""
+                SELECT i.ing_id, i.name, i.quantity, i.unit, ii.quantity_needed
+                FROM Ingredients i
+                JOIN Item_ingredients ii ON i.ing_id = ii.ing_id
+                WHERE ii.item_id = %s
+            """, (item_id,))
+            ingredients = cursor.fetchall()
+        else:
+            ingredients = []
+        
+        cursor.close()
+        return render_template('admin_dashboard.html',
+                             admin_id=admin_id,
+                             item=item,
+                             ingredients=ingredients,
+                             action=action,
+                             message=message,
+                             manage_item=True)
+    except Exception as e:
+        cursor.close()
+        return f"Error: {str(e)}", 500
 
 @app.route('/admin/menu/delete_menu',methods=['POST','GET'])
 def delete_menu():
@@ -244,7 +374,7 @@ def delete_menu():
     cursor.execute("SELECT item_id,name FROM Menu")
     menu=cursor.fetchall()
     cursor.close()
-    return render_template('admin/delete_menu.html',action='delete_menu',menu=menu,message=message)
+    return render_template('admin_dashboard.html',action='delete_menu',menu=menu,message=message)
 
 @app.route('/admin/menu/change_price',methods=['POST','GET'])
 def change_price():
