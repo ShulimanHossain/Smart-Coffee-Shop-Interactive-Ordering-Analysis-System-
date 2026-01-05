@@ -164,13 +164,17 @@ def admin_dashboard(admin_id):
         
         # Fetch menu if needed for menu-related actions
         menu = []
-        if action in ['view_menu', 'delete_menu', 'update_stock', 'change_price']:
+        if action in ['view_menu', 'delete_menu', 'change_price']:
             cursor.execute("SELECT * FROM Menu")
             menu = cursor.fetchall()
         
-        # Fetch ingredients if needed for Add Item form
+        # Fetch ingredients if needed for Add Item form or Update Stock
         ingredients = []
         if action == 'add':
+            cursor.execute("SELECT ing_id, name, quantity, unit FROM Ingredients ORDER BY name")
+            ingredients = cursor.fetchall()
+        elif action == 'update_stock':
+            # For update stock, show all ingredients directly
             cursor.execute("SELECT ing_id, name, quantity, unit FROM Ingredients ORDER BY name")
             ingredients = cursor.fetchall()
         
@@ -206,6 +210,31 @@ def admin_dashboard(admin_id):
             """)
             all_orders = cursor.fetchall()
         
+        # Get orders for view_orders with period filter
+        view_orders_list = []
+        period = request.args.get('period', 'all')
+        if action == 'view_orders':
+            date_filter = ""
+            if period == '1day':
+                date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 1 DAY)"
+            elif period == '7days':
+                date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"
+            elif period == '14days':
+                date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)"
+            elif period == '1month':
+                date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)"
+            elif period == '6months':
+                date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)"
+            
+            cursor.execute(f"""
+                SELECT o.*, t.status AS table_status 
+                FROM Orders o 
+                JOIN Cafe_tables t ON o.table_no = t.table_no  
+                WHERE 1=1 {date_filter}
+                ORDER BY o.order_date DESC, o.order_time DESC
+            """)
+            view_orders_list = cursor.fetchall()
+        
         cursor.close()
         return render_template('admin_dashboard.html', 
                              admin_id=admin_id, 
@@ -215,6 +244,8 @@ def admin_dashboard(admin_id):
                              ingredients=ingredients,
                              managers=managers,
                              all_orders=all_orders,
+                             view_orders_list=view_orders_list,
+                             period=period,
                              action=action,
                              message=message,
                              search_query=search_query,
@@ -333,7 +364,7 @@ def manage_item(admin_id, item_id):
                     mysql.connection.commit()
                     message = "Item deleted successfully"
                     cursor.close()
-                    return redirect(url_for('admin_dashboard', admin_id=admin_id, action='delete_menu', message=message))
+                    return redirect(url_for('admin_dashboard', admin_id=admin_id, action='delete_menu', message=message, clear='true'))
                 except Exception as e:
                     mysql.connection.rollback()
                     message = f"Error deleting item: {str(e)}"
@@ -345,52 +376,13 @@ def manage_item(admin_id, item_id):
                     mysql.connection.commit()
                     message = "Price changed successfully"
                     cursor.close()
-                    return redirect(url_for('admin_dashboard', admin_id=admin_id, action='change_price', message=message))
+                    return redirect(url_for('admin_dashboard', admin_id=admin_id, action='change_price', message=message, clear='true'))
                 except Exception as e:
                     mysql.connection.rollback()
                     message = f"Error changing price: {str(e)}"
             
-            elif action == 'update_stock':
-                # Only update ingredients, not menu item stock
-                # Get ingredients for this item
-                cursor.execute("""
-                    SELECT i.ing_id, i.name, i.quantity, i.unit, ii.quantity_needed
-                    FROM Ingredients i
-                    JOIN Item_ingredients ii ON i.ing_id = ii.ing_id
-                    WHERE ii.item_id = %s
-                """, (item_id,))
-                ingredients = cursor.fetchall()
-                
-                # Update each ingredient quantity
-                for ing in ingredients:
-                    ing_id = ing['ing_id']
-                    new_quantity = request.form.get(f'quantity_{ing_id}')
-                    if new_quantity:
-                        try:
-                            cursor.execute("UPDATE Ingredients SET quantity=%s WHERE ing_id=%s", (new_quantity, ing_id))
-                        except Exception as e:
-                            mysql.connection.rollback()
-                            message = f"Error updating stock: {str(e)}"
-                            cursor.close()
-                            return redirect(url_for('manage_item', admin_id=admin_id, item_id=item_id, action='update_stock', message=message))
-                
-                mysql.connection.commit()
-                message = "Stock updated successfully"
-                cursor.close()
-                return redirect(url_for('admin_dashboard', admin_id=admin_id, action='update_stock', message=message))
-        
         # GET request - show form
-        if action == 'update_stock':
-            # Get ingredients for this item
-            cursor.execute("""
-                SELECT i.ing_id, i.name, i.quantity, i.unit, ii.quantity_needed
-                FROM Ingredients i
-                JOIN Item_ingredients ii ON i.ing_id = ii.ing_id
-                WHERE ii.item_id = %s
-            """, (item_id,))
-            ingredients = cursor.fetchall()
-        else:
-            ingredients = []
+        ingredients = []
         
         cursor.close()
         return render_template('admin_dashboard.html',
@@ -461,16 +453,33 @@ def updatestock():
       cursor.close()
       return render_template('admin/update_stock.html',action='updatestock',ingredients=ingredients,message=message)
 
-@app.route('/admin/order',methods=['GET'])
-def view_order():
+@app.route('/admin/<string:admin_id>/view_orders',methods=['GET'])
+def view_order(admin_id):
+    period = request.args.get('period', 'all')  # all, 1day, 7days, 14days, 1month, 6months
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute("""SELECT  o.*, t.status AS table_status FROM Orders o 
+    
+    # Build date filter based on period
+    date_filter = ""
+    if period == '1day':
+        date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 1 DAY)"
+    elif period == '7days':
+        date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"
+    elif period == '14days':
+        date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)"
+    elif period == '1month':
+        date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)"
+    elif period == '6months':
+        date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)"
+    # 'all' shows all orders
+    
+    cursor.execute(f"""SELECT o.*, t.status AS table_status FROM Orders o 
                    JOIN Cafe_tables t ON o.table_no = t.table_no  
-                   WHERE o.status='active' 
-                   ORDER BY o.order_date, o.order_time""")
-    orders=cursor.fetchall()
+                   WHERE 1=1 {date_filter}
+                   ORDER BY o.order_date DESC, o.order_time DESC""")
+    orders = cursor.fetchall()
     cursor.close()
-    return render_template('admin/view_order.html',orders =orders)
+    
+    return redirect(url_for('admin_dashboard', admin_id=admin_id, action='view_orders', period=period, orders=orders))
 
 @app.route('/admin/live_orders',methods=['GET'])
 def live_orders():
