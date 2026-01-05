@@ -222,6 +222,48 @@ def order_summary(order_id):
     finally:
         cursor.close()
 
+@app.route("/order/<int:order_id>/payment")
+def payment_page(order_id):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    try:
+        cursor.execute("SELECT * FROM Orders WHERE order_id=%s", (order_id,))
+        order = cursor.fetchone()
+        
+        if not order:
+            return "Order not found", 404
+        
+        if order["status"] != "active":
+            return "Order is not active", 400
+
+        return render_template("payment.html", order=order)
+    finally:
+        cursor.close()
+
+@app.route("/order/<int:order_id>/receipt")
+def receipt_page(order_id):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    try:
+        cursor.execute("SELECT * FROM Orders WHERE order_id=%s", (order_id,))
+        order = cursor.fetchone()
+        
+        if not order:
+            return "Order not found", 404
+        
+        if order["payment_status"] != "paid":
+            return redirect(url_for("order_summary", order_id=order_id))
+
+        cursor.execute("""
+            SELECT M.name, OD.quantity, M.price
+            FROM Order_details OD
+            JOIN Menu M ON M.item_id = OD.item_id
+            WHERE OD.order_id = %s
+        """, (order_id,))
+        items = cursor.fetchall()
+
+        return render_template("receipt.html", order=order, items=items)
+    finally:
+        cursor.close()
+
 @app.route("/order/<int:order_id>/request_payment", methods=["POST"])
 def request_payment(order_id):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
@@ -248,7 +290,7 @@ def request_payment(order_id):
         """, (payment_method, order_id))
         mysql.connection.commit()
         
-        return jsonify({"success": True, "message": "Payment request submitted"})
+        return jsonify({"success": True, "message": "Payment request submitted", "redirect": f"/order/{order_id}/payment"})
     except Exception as e:
         mysql.connection.rollback()
         return jsonify({"error": str(e)}), 500
