@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Receipt #{{ order.order_id }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            background: #f5f5f5; 
+        }
+        .receipt-container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .receipt-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px 10px 0 0;
+            text-align: center;
+        }
+        .receipt-body {
+            background: white;
+            padding: 30px;
+            border-radius: 0 0 10px 10px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        .receipt-divider {
+            border-top: 2px dashed #ddd;
+            margin: 20px 0;
+        }
+        .print-btn {
+            display: none;
+        }
+        @media print {
+            .no-print {
+                display: none;
+            }
+            .print-btn {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container mt-5">
+        <div class="receipt-container">
+            <div class="receipt-header">
+                <h1>☕ Cafe ML</h1>
+                <p class="mb-0">Order Receipt</p>
+            </div>
+            
+            <div class="receipt-body">
+                <div class="alert alert-success text-center">
+                    <h4>✅ Payment Confirmed!</h4>
+                    <p class="mb-0">Thank you for your payment. Your order has been completed.</p>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <strong>Order Number:</strong><br>
+                        <span class="h5">#{{ order.order_id }}</span>
+                    </div>
+                    <div class="col-6 text-end">
+                        <strong>Table:</strong><br>
+                        <span class="h5">{{ order.table_no }}</span>
+                    </div>
+                </div>
+
+                <div class="receipt-divider"></div>
+
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <strong>Order Date:</strong><br>
+                        {{ order.order_date }}
+                    </div>
+                    <div class="col-6 text-end">
+                        <strong>Order Time:</strong><br>
+                        {{ order.order_time }}
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <strong>Payment Method:</strong><br>
+                        {{ order.payment_method|title }}
+                    </div>
+                    <div class="col-6 text-end">
+                        <strong>Status:</strong><br>
+                        <span class="badge bg-success">Completed</span>
+                    </div>
+                </div>
+
+                <div class="receipt-divider"></div>
+
+                <h5 class="mb-3">Items Ordered:</h5>
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th class="text-center">Qty</th>
+                            <th class="text-end">Price</th>
+                            <th class="text-end">Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td>{{ item.name }}</td>
+                            <td class="text-center">{{ item.quantity }}</td>
+                            <td class="text-end">${{ "%.2f"|format(item.price) }}</td>
+                            <td class="text-end">${{ "%.2f"|format(item.price * item.quantity) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-active">
+                            <th colspan="3" class="text-end">Total:</th>
+                            <th class="text-end">${{ "%.2f"|format(order.total_bill) }}</th>
+                        </tr>
+                    </tfoot>
+                </table>
+
+                <div class="receipt-divider"></div>
+
+                <div class="text-center mt-4">
+                    <p class="text-muted mb-4">Thank you for visiting Cafe ML!</p>
+                    <a href="/" class="btn btn-primary btn-lg no-print">Back to Home</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+
