@@ -138,7 +138,7 @@ def admin_dashboard(admin_id):
     
     # Check if manager is trying to access admin-only features
     user_role = session.get('role')
-    admin_only_actions = ['add', 'delete_menu', 'update_stock', 'change_price', 'view_managers', 'view_menu']
+    admin_only_actions = ['add', 'delete_menu', 'update_stock', 'change_price', 'view_managers', 'view_menu', 'sales_analysis']
     if user_role == 'manager' and action in admin_only_actions:
         return "Access Denied! You are not authorized to access this feature.", 403
     
@@ -181,34 +181,43 @@ def admin_dashboard(admin_id):
         # Fetch managers if admin wants to view manager info
         managers = []
         if action == 'view_managers' and session.get('role') == 'admin':
-            if search_query:
-                cursor.execute("""
-                    SELECT user_code, name, email, role, created_at 
-                    FROM User 
-                    WHERE role = 'manager' 
-                    AND (name LIKE %s OR user_code LIKE %s OR email LIKE %s)
-                    ORDER BY created_at DESC
-                """, (f'%{search_query}%', f'%{search_query}%', f'%{search_query}%'))
-            else:
-                cursor.execute("""
-                    SELECT user_code, name, email, role, created_at 
-                    FROM User 
-                    WHERE role = 'manager' 
-                    ORDER BY created_at DESC
-                """)
-            managers = cursor.fetchall()
+            try:
+                if search_query:
+                    cursor.execute("""
+                        SELECT user_code, name, email, role, created_at 
+                        FROM User 
+                        WHERE LOWER(role) = 'manager' 
+                        AND (name LIKE %s OR user_code LIKE %s OR email LIKE %s)
+                        ORDER BY created_at DESC
+                    """, (f'%{search_query}%', f'%{search_query}%', f'%{search_query}%'))
+                else:
+                    cursor.execute("""
+                        SELECT user_code, name, email, role, created_at 
+                        FROM User 
+                        WHERE LOWER(role) = 'manager' 
+                        ORDER BY created_at DESC
+                    """)
+                managers = cursor.fetchall()
+            except Exception as e:
+                # If User table doesn't exist or has different structure, try alternative
+                print(f"Error fetching managers: {str(e)}")
+                managers = []
         
         # Get all orders for manager info view
         all_orders = []
         if action == 'view_managers' and session.get('role') == 'admin':
-            cursor.execute("""
-                SELECT o.*, t.status AS table_status 
-                FROM Orders o 
-                JOIN Cafe_tables t ON o.table_no = t.table_no  
-                ORDER BY o.order_date DESC, o.order_time DESC
-                LIMIT 100
-            """)
-            all_orders = cursor.fetchall()
+            try:
+                cursor.execute("""
+                    SELECT o.*, COALESCE(t.status, 'Unknown') AS table_status 
+                    FROM Orders o 
+                    LEFT JOIN Cafe_tables t ON o.table_no = t.table_no  
+                    ORDER BY o.order_date DESC, o.order_time DESC
+                    LIMIT 100
+                """)
+                all_orders = cursor.fetchall()
+            except Exception as e:
+                print(f"Error fetching orders for manager view: {str(e)}")
+                all_orders = []
         
         # Get orders for view_orders with period filter
         view_orders_list = []
@@ -226,14 +235,32 @@ def admin_dashboard(admin_id):
             elif period == '6months':
                 date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)"
             
-            cursor.execute(f"""
-                SELECT o.*, t.status AS table_status 
-                FROM Orders o 
-                JOIN Cafe_tables t ON o.table_no = t.table_no  
-                WHERE 1=1 {date_filter}
-                ORDER BY o.order_date DESC, o.order_time DESC
-            """)
-            view_orders_list = cursor.fetchall()
+            # Use LEFT JOIN to include all orders even if table doesn't exist
+            try:
+                query = f"""
+                    SELECT o.*, COALESCE(t.status, 'Unknown') AS table_status 
+                    FROM Orders o 
+                    LEFT JOIN Cafe_tables t ON o.table_no = t.table_no  
+                    WHERE 1=1 {date_filter}
+                    ORDER BY o.order_date DESC, o.order_time DESC
+                """
+                cursor.execute(query)
+                view_orders_list = cursor.fetchall()
+            except Exception as e:
+                # If JOIN fails, try without JOIN
+                print(f"Error with JOIN, trying without: {str(e)}")
+                try:
+                    query = f"""
+                        SELECT o.*, 'Unknown' AS table_status 
+                        FROM Orders o 
+                        WHERE 1=1 {date_filter}
+                        ORDER BY o.order_date DESC, o.order_time DESC
+                    """
+                    cursor.execute(query)
+                    view_orders_list = cursor.fetchall()
+                except Exception as e2:
+                    print(f"Error fetching orders: {str(e2)}")
+                    view_orders_list = []
         
         cursor.close()
         return render_template('admin_dashboard.html', 
@@ -453,33 +480,7 @@ def updatestock():
       cursor.close()
       return render_template('admin/update_stock.html',action='updatestock',ingredients=ingredients,message=message)
 
-@app.route('/admin/<string:admin_id>/view_orders',methods=['GET'])
-def view_order(admin_id):
-    period = request.args.get('period', 'all')  # all, 1day, 7days, 14days, 1month, 6months
-    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    
-    # Build date filter based on period
-    date_filter = ""
-    if period == '1day':
-        date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 1 DAY)"
-    elif period == '7days':
-        date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"
-    elif period == '14days':
-        date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)"
-    elif period == '1month':
-        date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)"
-    elif period == '6months':
-        date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)"
-    # 'all' shows all orders
-    
-    cursor.execute(f"""SELECT o.*, t.status AS table_status FROM Orders o 
-                   JOIN Cafe_tables t ON o.table_no = t.table_no  
-                   WHERE 1=1 {date_filter}
-                   ORDER BY o.order_date DESC, o.order_time DESC""")
-    orders = cursor.fetchall()
-    cursor.close()
-    
-    return redirect(url_for('admin_dashboard', admin_id=admin_id, action='view_orders', period=period, orders=orders))
+# Removed duplicate route - view_orders is now handled in admin_dashboard route
 
 @app.route('/admin/live_orders',methods=['GET'])
 def live_orders():
@@ -549,37 +550,46 @@ def sales_analysis():
     try:
         if period == 'today':
             cursor.execute("""
-                SELECT DATE(order_date) as date, SUM(total_bill) as revenue, COUNT(*) as order_count
+                SELECT DATE(order_date) as date, 
+                       COALESCE(SUM(total_bill), 0) as revenue, 
+                       COUNT(*) as order_count
                 FROM Orders 
-                WHERE DATE(order_date) = CURDATE() AND status = 'completed'
+                WHERE DATE(order_date) = CURDATE() 
+                AND (status = 'completed' OR status = 'active')
                 GROUP BY DATE(order_date)
             """)
         elif period == 'week':
             cursor.execute("""
-                SELECT DATE(order_date) as date, SUM(total_bill) as revenue, COUNT(*) as order_count
+                SELECT DATE(order_date) as date, 
+                       COALESCE(SUM(total_bill), 0) as revenue, 
+                       COUNT(*) as order_count
                 FROM Orders 
                 WHERE order_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) 
-                AND status = 'completed'
+                AND (status = 'completed' OR status = 'active')
                 GROUP BY DATE(order_date)
                 ORDER BY date
             """)
         elif period == 'month':
             cursor.execute("""
-                SELECT DATE(order_date) as date, SUM(total_bill) as revenue, COUNT(*) as order_count
+                SELECT DATE(order_date) as date, 
+                       COALESCE(SUM(total_bill), 0) as revenue, 
+                       COUNT(*) as order_count
                 FROM Orders 
                 WHERE MONTH(order_date) = MONTH(CURDATE()) 
                 AND YEAR(order_date) = YEAR(CURDATE())
-                AND status = 'completed'
+                AND (status = 'completed' OR status = 'active')
                 GROUP BY DATE(order_date)
                 ORDER BY date
             """)
         elif period == 'last_month':
             cursor.execute("""
-                SELECT DATE(order_date) as date, SUM(total_bill) as revenue, COUNT(*) as order_count
+                SELECT DATE(order_date) as date, 
+                       COALESCE(SUM(total_bill), 0) as revenue, 
+                       COUNT(*) as order_count
                 FROM Orders 
                 WHERE MONTH(order_date) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
                 AND YEAR(order_date) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
-                AND status = 'completed'
+                AND (status = 'completed' OR status = 'active')
                 GROUP BY DATE(order_date)
                 ORDER BY date
             """)
@@ -587,15 +597,15 @@ def sales_analysis():
         sales_data = cursor.fetchall()
         
         # Calculate total revenue
-        total_revenue = sum(float(row['revenue'] or 0) for row in sales_data)
-        total_orders = sum(int(row['order_count'] or 0) for row in sales_data)
+        total_revenue = sum(float(row.get('revenue', 0) or 0) for row in sales_data)
+        total_orders = sum(int(row.get('order_count', 0) or 0) for row in sales_data)
         
         # Format dates for JSON
         for row in sales_data:
-            if row['date']:
+            if row.get('date'):
                 row['date'] = str(row['date'])
-            row['revenue'] = float(row['revenue'] or 0)
-            row['order_count'] = int(row['order_count'] or 0)
+            row['revenue'] = float(row.get('revenue', 0) or 0)
+            row['order_count'] = int(row.get('order_count', 0) or 0)
         
         return jsonify({
             'period': period,
