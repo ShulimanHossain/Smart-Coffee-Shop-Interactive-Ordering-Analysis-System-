@@ -178,13 +178,16 @@ input:focus, select:focus {
 <div class="sidebar">
     <h2>Admin Panel</h2>
     <a href="?action=active" class="{% if action=='active' %}active{% endif %}">Active Orders</a>
+    {% if session.role == 'admin' %}
     <a href="?action=add" class="{% if action=='add' %}active{% endif %}">Add Item</a>
     <a href="?action=view_menu" class="{% if action=='view_menu' %}active{% endif %}">View Menu</a>
     <a href="?action=delete_menu" class="{% if action=='delete_menu' %}active{% endif %}">Delete Item</a>
     <a href="?action=update_stock" class="{% if action=='update_stock' %}active{% endif %}">Update Stock</a>
     <a href="?action=change_price" class="{% if action=='change_price' %}active{% endif %}">Change Price</a>
+    {% endif %}
     <a href="?action=view_orders" class="{% if action=='view_orders' %}active{% endif %}">View Orders</a>
     <a href="?action=change_password" class="{% if action=='change_password' %}active{% endif %}">Change Password</a>
+    <a href="/logout">Logout</a>
 </div>
 
 <div class="content">
@@ -250,7 +253,7 @@ input:focus, select:focus {
     {% endif %}
 
     <!-- Item Management Form (when clicking Manage) -->
-    {% if manage_item and item %}
+    {% if manage_item and item and session.role == 'admin' %}
     <div class="form-card">
         {% if action == 'delete_menu' %}
         <h3>Delete Item: {{ item.name }}</h3>
@@ -291,7 +294,7 @@ input:focus, select:focus {
     {% endif %}
 
     <!-- Menu Management -->
-    {% if (action=='view_menu' or action=='delete_menu' or action=='update_stock' or action=='change_price') and not manage_item %}
+    {% if (action=='delete_menu' or action=='update_stock' or action=='change_price') and not manage_item and session.role == 'admin' %}
     <div class="card-grid">
         {% for item in menu %}
         <div class="card" onclick="location.href='/admin/{{ admin_id }}/item/{{ item.item_id }}?action={{ action }}'">
@@ -309,8 +312,26 @@ input:focus, select:focus {
     </div>
     {% endif %}
 
+    <!-- View Menu (Read-only) -->
+    {% if action=='view_menu' and not manage_item %}
+    <div class="card-grid">
+        {% for item in menu %}
+        <div class="card">
+            <h3>{{ item.name }}</h3>
+            <p>Price: ${{ "%.2f"|format(item.price) }}</p>
+            <p>Stock: {{ item.stock if item.stock is defined else 'N/A' }}</p>
+        </div>
+        {% endfor %}
+        {% if menu|length == 0 %}
+        <div class="empty-state">
+            <p>No items available.</p>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <!-- Add Item Form -->
-    {% if action=='add' %}
+    {% if action=='add' and session.role == 'admin' %}
     <div class="form-card">
         <form method="POST" action="/admin/{{ admin_id }}/add_item">
             <label>Item Name</label>
@@ -346,7 +367,7 @@ input:focus, select:focus {
             <div id="new-ingredients-container" style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #ddd;">
                 <label><strong>Add New Ingredients (if not in list above)</strong></label>
                 <div id="new-ingredients-list">
-                    <div class="new-ingredient-row" style="margin-bottom: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 6px; background: #f8f9fa;">
+                    <.div class="new-ingredient-row" style="margin-bottom: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 6px; background: #f8f9fa;">
                         <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 0.5fr; gap: 10px; align-items: end;">
                             <div>
                                 <label style="font-size: 0.9em;">Ingredient Name</label>

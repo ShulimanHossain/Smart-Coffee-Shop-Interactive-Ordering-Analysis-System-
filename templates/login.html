@@ -117,6 +117,10 @@
                        placeholder="Enter your password" 
                        required>
             </div>
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="viewPassword">
+                <label class="form-check-label" for="viewPassword">View Password</label>
+            </div>
 
             <button type="submit" class="btn btn-login">Login</button>
         </form>
@@ -129,6 +133,15 @@
             </ul>
         </div>
     </div>
+    <script>
+        const viewPassword = document.getElementById('viewPassword');
+        const password = document.getElementById('password');
+
+        viewPassword.addEventListener('click', function (e) {
+            const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
+            password.setAttribute('type', type);
+        });
+    </script>
 </body>
 </html>
 
