@@ -287,7 +287,7 @@
                 
                 <div class="menu-container">
                     {% for item in menu %}
-                    <div class="menu-item">
+                    <div class="menu-item" id="menu-item-{{ item.item_id }}">
                         <h3>{{ item.name }}</h3>
                         <div class="price">${{ "%.2f"|format(item.price) }}</div>
                         <div class="quantity-control">
@@ -301,6 +301,10 @@
                                 onclick="addToCartFromButton(this)">
                             Add to Cart
                         </button>
+                        <div class="item-suggestions" id="suggestions-{{ item.item_id }}" style="margin-top: 10px; padding: 10px; background: #e3f2fd; border-radius: 5px; display: none; font-size: 0.9em;">
+                            <strong>💡 Customers also ordered:</strong>
+                            <div id="suggestions-list-{{ item.item_id }}"></div>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
@@ -368,6 +372,28 @@
             const name = button.getAttribute('data-item-name');
             const price = parseFloat(button.getAttribute('data-item-price'));
             addToCart(itemId, name, price);
+            // Load suggestions for this item
+            loadItemSuggestions(itemId);
+        }
+
+        async function loadItemSuggestions(itemId) {
+            try {
+                const response = await fetch(`/admin/item_suggestions/${itemId}`);
+                const data = await response.json();
+                
+                if (data.suggestions && data.suggestions.length > 0) {
+                    const suggestionsDiv = document.getElementById(`suggestions-${itemId}`);
+                    const suggestionsList = document.getElementById(`suggestions-list-${itemId}`);
+                    
+                    if (suggestionsDiv && suggestionsList) {
+                        const suggestionsText = data.suggestions.map(s => s.name).join(', ');
+                        suggestionsList.innerHTML = `<span style="color: #1976d2;">${suggestionsText}</span>`;
+                        suggestionsDiv.style.display = 'block';
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading suggestions:', error);
+            }
         }
 
         function addToCart(itemId, name, price) {

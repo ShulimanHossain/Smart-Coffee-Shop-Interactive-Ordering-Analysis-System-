@@ -10,8 +10,8 @@ mysql=MySQL (app)
 
 @app.before_request
 def check_role():
-    # Skip role check for login and home routes
-    if request.endpoint in ['login', 'home']:
+    # Skip role check for login, home, and public API routes
+    if request.endpoint in ['login', 'home', 'item_suggestions']:
         return None
     
     protected_routes = {
@@ -351,19 +351,7 @@ def manage_item(admin_id, item_id):
                     message = f"Error changing price: {str(e)}"
             
             elif action == 'update_stock':
-                # Update menu item stock if provided
-                menu_stock = request.form.get('menu_stock')
-                if menu_stock is not None and menu_stock != '':
-                    try:
-                        # Check if stock column exists, if not, we'll just update ingredients
-                        cursor.execute("SHOW COLUMNS FROM Menu LIKE 'stock'")
-                        stock_exists = cursor.fetchone()
-                        if stock_exists:
-                            cursor.execute("UPDATE Menu SET stock=%s WHERE item_id=%s", (int(menu_stock), item_id))
-                    except Exception as e:
-                        # If stock column doesn't exist, continue with ingredient updates
-                        pass
-                
+                # Only update ingredients, not menu item stock
                 # Get ingredients for this item
                 cursor.execute("""
                     SELECT i.ing_id, i.name, i.quantity, i.unit, ii.quantity_needed
@@ -393,10 +381,6 @@ def manage_item(admin_id, item_id):
         
         # GET request - show form
         if action == 'update_stock':
-            # Check if Menu has stock column
-            cursor.execute("SHOW COLUMNS FROM Menu LIKE 'stock'")
-            has_stock_column = cursor.fetchone()
-            
             # Get ingredients for this item
             cursor.execute("""
                 SELECT i.ing_id, i.name, i.quantity, i.unit, ii.quantity_needed
@@ -405,16 +389,8 @@ def manage_item(admin_id, item_id):
                 WHERE ii.item_id = %s
             """, (item_id,))
             ingredients = cursor.fetchall()
-            
-            # Add stock info to item if column exists
-            if has_stock_column and 'stock' not in item:
-                cursor.execute("SELECT stock FROM Menu WHERE item_id=%s", (item_id,))
-                stock_result = cursor.fetchone()
-                if stock_result:
-                    item['stock'] = stock_result.get('stock', 0)
         else:
             ingredients = []
-            has_stock_column = None
         
         cursor.close()
         return render_template('admin_dashboard.html',
@@ -423,7 +399,6 @@ def manage_item(admin_id, item_id):
                              ingredients=ingredients,
                              action=action,
                              message=message,
-                             has_stock_column=has_stock_column if action == 'update_stock' else None,
                              manage_item=True)
     except Exception as e:
         cursor.close()
@@ -555,6 +530,155 @@ def confirm_payment(order_id):
     finally:
         cursor.close()
   
+
+@app.route('/admin/sales_analysis', methods=['GET'])
+def sales_analysis():
+    """Get sales analysis data for different time periods"""
+    period = request.args.get('period', 'today')  # today, week, month, last_month
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    
+    try:
+        if period == 'today':
+            cursor.execute("""
+                SELECT DATE(order_date) as date, SUM(total_bill) as revenue, COUNT(*) as order_count
+                FROM Orders 
+                WHERE DATE(order_date) = CURDATE() AND status = 'completed'
+                GROUP BY DATE(order_date)
+            """)
+        elif period == 'week':
+            cursor.execute("""
+                SELECT DATE(order_date) as date, SUM(total_bill) as revenue, COUNT(*) as order_count
+                FROM Orders 
+                WHERE order_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) 
+                AND status = 'completed'
+                GROUP BY DATE(order_date)
+                ORDER BY date
+            """)
+        elif period == 'month':
+            cursor.execute("""
+                SELECT DATE(order_date) as date, SUM(total_bill) as revenue, COUNT(*) as order_count
+                FROM Orders 
+                WHERE MONTH(order_date) = MONTH(CURDATE()) 
+                AND YEAR(order_date) = YEAR(CURDATE())
+                AND status = 'completed'
+                GROUP BY DATE(order_date)
+                ORDER BY date
+            """)
+        elif period == 'last_month':
+            cursor.execute("""
+                SELECT DATE(order_date) as date, SUM(total_bill) as revenue, COUNT(*) as order_count
+                FROM Orders 
+                WHERE MONTH(order_date) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
+                AND YEAR(order_date) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
+                AND status = 'completed'
+                GROUP BY DATE(order_date)
+                ORDER BY date
+            """)
+        
+        sales_data = cursor.fetchall()
+        
+        # Calculate total revenue
+        total_revenue = sum(float(row['revenue'] or 0) for row in sales_data)
+        total_orders = sum(int(row['order_count'] or 0) for row in sales_data)
+        
+        # Format dates for JSON
+        for row in sales_data:
+            if row['date']:
+                row['date'] = str(row['date'])
+            row['revenue'] = float(row['revenue'] or 0)
+            row['order_count'] = int(row['order_count'] or 0)
+        
+        return jsonify({
+            'period': period,
+            'total_revenue': total_revenue,
+            'total_orders': total_orders,
+            'data': sales_data
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+
+@app.route('/admin/daily_suggestions', methods=['GET'])
+def daily_suggestions():
+    """Get item suggestions based on previous same day of week"""
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    
+    try:
+        # Get current day of week (0=Monday, 6=Sunday)
+        cursor.execute("SELECT DAYOFWEEK(CURDATE()) - 1 as day_of_week")
+        current_dow = cursor.fetchone()['day_of_week']
+        
+        # Get most sold items on the same day of week in previous weeks
+        cursor.execute("""
+            SELECT m.item_id, m.name, SUM(od.quantity) as total_quantity, SUM(od.quantity * m.price) as total_revenue
+            FROM Order_details od
+            JOIN Menu m ON od.item_id = m.item_id
+            JOIN Orders o ON od.order_id = o.order_id
+            WHERE DAYOFWEEK(o.order_date) - 1 = %s
+            AND o.status = 'completed'
+            AND o.order_date < CURDATE()
+            GROUP BY m.item_id, m.name
+            ORDER BY total_quantity DESC
+            LIMIT 5
+        """, (current_dow,))
+        
+        suggestions = cursor.fetchall()
+        
+        # Format for JSON
+        for sug in suggestions:
+            sug['total_quantity'] = int(sug['total_quantity'] or 0)
+            sug['total_revenue'] = float(sug['total_revenue'] or 0)
+        
+        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        day_name = day_names[current_dow] if current_dow < len(day_names) else 'Unknown'
+        
+        return jsonify({
+            'day': day_name,
+            'suggestions': suggestions
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+
+@app.route('/admin/item_suggestions/<int:item_id>', methods=['GET'])
+def item_suggestions(item_id):
+    """Get items that are frequently ordered together with the given item"""
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    
+    try:
+        # Find items that are frequently ordered together
+        cursor.execute("""
+            SELECT m2.item_id, m2.name, m2.price, COUNT(*) as order_count
+            FROM Order_details od1
+            JOIN Order_details od2 ON od1.order_id = od2.order_id
+            JOIN Menu m2 ON od2.item_id = m2.item_id
+            WHERE od1.item_id = %s
+            AND od2.item_id != %s
+            AND od1.order_id IN (
+                SELECT order_id FROM Orders WHERE status = 'completed'
+            )
+            GROUP BY m2.item_id, m2.name, m2.price
+            ORDER BY order_count DESC
+            LIMIT 3
+        """, (item_id, item_id))
+        
+        suggestions = cursor.fetchall()
+        
+        # Format for JSON
+        for sug in suggestions:
+            sug['order_count'] = int(sug['order_count'] or 0)
+            sug['price'] = float(sug['price'] or 0)
+        
+        return jsonify({
+            'item_id': item_id,
+            'suggestions': suggestions
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
 
 @app.route('/logout')
 def logout(): 

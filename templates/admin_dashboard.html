@@ -171,6 +171,26 @@ input:focus, select:focus {
     color: #666;
     font-size: 1.1em;
 }
+
+.period-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    background: #6c757d;
+    color: white;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.period-btn:hover {
+    background: #5a6268;
+    transform: translateY(-2px);
+}
+
+.period-btn.active {
+    background: #007bff;
+}
 </style>
 </head>
 <body>
@@ -211,6 +231,38 @@ input:focus, select:focus {
 
     <!-- Active Orders / Live Dashboard -->
     {% if action == 'active' or action=='view_orders' %}
+    <!-- Sales Analysis Section -->
+    <div class="form-card" style="margin-bottom: 30px;">
+        <h3>Sales Analysis</h3>
+        <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+            <button onclick="loadSalesAnalysis('today')" class="period-btn" id="btn-today">Today</button>
+            <button onclick="loadSalesAnalysis('week')" class="period-btn" id="btn-week">Last 7 Days</button>
+            <button onclick="loadSalesAnalysis('month')" class="period-btn" id="btn-month">This Month</button>
+            <button onclick="loadSalesAnalysis('last_month')" class="period-btn" id="btn-last-month">Last Month</button>
+        </div>
+        <div id="sales-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px;">
+                <strong>Total Revenue</strong>
+                <h2 id="total-revenue" style="margin: 10px 0; color: #1976d2;">$0.00</h2>
+            </div>
+            <div style="background: #f3e5f5; padding: 15px; border-radius: 8px;">
+                <strong>Total Orders</strong>
+                <h2 id="total-orders" style="margin: 10px 0; color: #7b1fa2;">0</h2>
+            </div>
+        </div>
+        <div id="sales-chart-container" style="margin-top: 20px;">
+            <canvas id="sales-chart" style="max-height: 300px;"></canvas>
+        </div>
+    </div>
+
+    <!-- Daily Suggestions -->
+    <div class="form-card" style="margin-bottom: 30px; background: #fff3cd; border-left: 4px solid #ffc107;">
+        <h3>📊 Daily Sales Suggestions</h3>
+        <div id="daily-suggestions">
+            <p>Loading suggestions...</p>
+        </div>
+    </div>
+
     <div class="card-grid" id="orders-container">
         {% for order in active_order %}
         <div class="card {% if order.payment_status == 'pending' %}payment-pending{% endif %}">
@@ -276,15 +328,8 @@ input:focus, select:focus {
             <button type="button" onclick="window.location.href='/admin/{{ admin_id }}?action=change_price'" style="background: #6c757d; margin-left: 10px;">Cancel</button>
         </form>
         {% elif action == 'update_stock' %}
-        <h3>Update Stock: {{ item.name }}</h3>
+        <h3>Update Ingredient Stock: {{ item.name }}</h3>
         <form method="POST" action="/admin/{{ admin_id }}/item/{{ item.item_id }}?action=update_stock">
-            {% if has_stock_column %}
-            <div style="margin: 15px 0; padding: 15px; border: 2px solid #007bff; border-radius: 6px; background: #f0f8ff;">
-                <label><strong>Menu Item Stock</strong></label>
-                <input type="number" step="1" name="menu_stock" value="{{ item.stock if item.stock is defined else 0 }}" placeholder="Item Stock Quantity" min="0">
-                <small style="color: #666;">Update the stock quantity for this menu item</small>
-            </div>
-            {% endif %}
             {% if ingredients %}
             <label><strong>Ingredients for this item:</strong></label>
             {% for ing in ingredients %}
@@ -308,7 +353,7 @@ input:focus, select:focus {
     {% if (action=='delete_menu' or action=='update_stock' or action=='change_price') and not manage_item and session.role == 'admin' %}
     <div class="card-grid">
         {% for item in menu %}
-        <div class="card" onclick="location.href='/admin/{{ admin_id }}/item/{{ item.item_id }}?action={{ action }}'">
+        <div class="card" onclick="window.location.href='/admin/{{ admin_id }}/item/{{ item.item_id }}?action={{ action }}&clear=true'">
             <h3>{{ item.name }}</h3>
             <p>Price: ${{ "%.2f"|format(item.price) }}</p>
             <p>Stock: {{ item.stock if item.stock is defined else 'N/A' }}</p>
