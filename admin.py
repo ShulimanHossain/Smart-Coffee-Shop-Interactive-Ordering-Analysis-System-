@@ -10,8 +10,8 @@ mysql=MySQL (app)
 
 @app.before_request
 def check_role():
-    # Skip role check for login and home routes
-    if request.endpoint in ['login', 'home']:
+    # Skip role check for login, home, and public API routes
+    if request.endpoint in ['login', 'home', 'item_suggestions']:
         return None
     
     protected_routes = {
@@ -23,7 +23,9 @@ def check_role():
         'admin_dashboard': ['admin', 'manager'],
         'confirm_payment': ['admin','manager'],
         'live_orders': ['admin', 'manager'],
-        'create_user' : ['admin']
+        'create_user': ['admin'],
+        'sales_analysis': ['admin'],
+        'daily_suggestions': ['admin']
     }
 
     requested_function = request.endpoint
@@ -133,6 +135,15 @@ def create_user():
 @app.route('/admin/<string:admin_id>')
 def admin_dashboard(admin_id):
     action = request.args.get('action', 'active')
+    message = request.args.get('message', '')
+    search_query = request.args.get('search', '')
+    
+    # Check if manager is trying to access admin-only features
+    user_role = session.get('role')
+    admin_only_actions = ['add', 'delete_menu', 'update_stock', 'change_price', 'view_managers', 'view_menu', 'sales_analysis']
+    if user_role == 'manager' and action in admin_only_actions:
+        return "Access Denied! You are not authorized to access this feature.", 403
+    
     cursor=mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     try:
         cursor.execute("SELECT * FROM Cafe_tables")
@@ -153,26 +164,166 @@ def admin_dashboard(admin_id):
         """)
         active_order = cursor.fetchall()
         
+        # Get order details with comments for active orders
+        for order in active_order:
+            try:
+                # Try to get comments if column exists
+                cursor.execute("""
+                    SELECT od.*, m.name as item_name, COALESCE(od.comments, '') as comments
+                    FROM Order_details od
+                    JOIN Menu m ON od.item_id = m.item_id
+                    WHERE od.order_id = %s
+                """, (order['order_id'],))
+            except Exception as e:
+                # If comments column doesn't exist, get without it
+                if "comments" in str(e).lower() or "unknown column" in str(e).lower():
+                    cursor.execute("""
+                        SELECT od.*, m.name as item_name, '' as comments
+                        FROM Order_details od
+                        JOIN Menu m ON od.item_id = m.item_id
+                        WHERE od.order_id = %s
+                    """, (order['order_id'],))
+                else:
+                    raise
+            order['items'] = cursor.fetchall()
+        
+        # Get top selling products for manager/admin dashboard
+        top_products = []
+        if action == 'active' and user_role in ['admin', 'manager']:
+            try:
+                cursor.execute("""
+                    SELECT m.item_id, m.name, m.price,
+                           SUM(od.quantity) as total_sold,
+                           COUNT(DISTINCT od.order_id) as order_count
+                    FROM Order_details od
+                    JOIN Menu m ON od.item_id = m.item_id
+                    JOIN Orders o ON od.order_id = o.order_id
+                    WHERE o.status = 'completed'
+                    AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                    GROUP BY m.item_id, m.name, m.price
+                    ORDER BY total_sold DESC
+                    LIMIT 5
+                """)
+                top_products = cursor.fetchall()
+            except Exception as e:
+                print(f"Error fetching top products: {str(e)}")
+                top_products = []
+        
         # Fetch menu if needed for menu-related actions
         menu = []
-        if action in ['view_menu', 'delete_menu', 'update_stock', 'change_price']:
+        if action in ['view_menu', 'delete_menu', 'change_price']:
             cursor.execute("SELECT * FROM Menu")
             menu = cursor.fetchall()
         
-        # Fetch ingredients if needed for Add Item form
+        # Fetch ingredients if needed for Add Item form or Update Stock
         ingredients = []
         if action == 'add':
             cursor.execute("SELECT ing_id, name, quantity, unit FROM Ingredients ORDER BY name")
             ingredients = cursor.fetchall()
+        elif action == 'update_stock':
+            # For update stock, show all ingredients directly
+            cursor.execute("SELECT ing_id, name, quantity, unit FROM Ingredients ORDER BY name")
+            ingredients = cursor.fetchall()
+        
+        # Fetch managers if admin wants to view manager info
+        managers = []
+        if action == 'view_managers' and session.get('role') == 'admin':
+            try:
+                if search_query:
+                    cursor.execute("""
+                        SELECT user_code, name, email, role, created_at 
+                        FROM User 
+                        WHERE LOWER(role) = 'manager' 
+                        AND (name LIKE %s OR user_code LIKE %s OR email LIKE %s)
+                        ORDER BY created_at DESC
+                    """, (f'%{search_query}%', f'%{search_query}%', f'%{search_query}%'))
+                else:
+                    cursor.execute("""
+                        SELECT user_code, name, email, role, created_at 
+                        FROM User 
+                        WHERE LOWER(role) = 'manager' 
+                        ORDER BY created_at DESC
+                    """)
+                managers = cursor.fetchall()
+            except Exception as e:
+                # If User table doesn't exist or has different structure, try alternative
+                print(f"Error fetching managers: {str(e)}")
+                managers = []
+        
+        # Get all orders for manager info view
+        all_orders = []
+        if action == 'view_managers' and session.get('role') == 'admin':
+            try:
+                cursor.execute("""
+                    SELECT o.*, COALESCE(t.status, 'Unknown') AS table_status 
+                    FROM Orders o 
+                    LEFT JOIN Cafe_tables t ON o.table_no = t.table_no  
+                    ORDER BY o.order_date DESC, o.order_time DESC
+                    LIMIT 100
+                """)
+                all_orders = cursor.fetchall()
+            except Exception as e:
+                print(f"Error fetching orders for manager view: {str(e)}")
+                all_orders = []
+        
+        # Get orders for view_orders with period filter
+        view_orders_list = []
+        period = request.args.get('period', 'all')
+        if action == 'view_orders':
+            date_filter = ""
+            if period == '1day':
+                date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 1 DAY)"
+            elif period == '7days':
+                date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"
+            elif period == '14days':
+                date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)"
+            elif period == '1month':
+                date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)"
+            elif period == '6months':
+                date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)"
+            
+            # Use LEFT JOIN to include all orders even if table doesn't exist
+            try:
+                query = f"""
+                    SELECT o.*, COALESCE(t.status, 'Unknown') AS table_status 
+                    FROM Orders o 
+                    LEFT JOIN Cafe_tables t ON o.table_no = t.table_no  
+                    WHERE 1=1 {date_filter}
+                    ORDER BY o.order_date DESC, o.order_time DESC
+                """
+                cursor.execute(query)
+                view_orders_list = cursor.fetchall()
+            except Exception as e:
+                # If JOIN fails, try without JOIN
+                print(f"Error with JOIN, trying without: {str(e)}")
+                try:
+                    query = f"""
+                        SELECT o.*, 'Unknown' AS table_status 
+                        FROM Orders o 
+                        WHERE 1=1 {date_filter}
+                        ORDER BY o.order_date DESC, o.order_time DESC
+                    """
+                    cursor.execute(query)
+                    view_orders_list = cursor.fetchall()
+                except Exception as e2:
+                    print(f"Error fetching orders: {str(e2)}")
+                    view_orders_list = []
         
         cursor.close()
         return render_template('admin_dashboard.html', 
                              admin_id=admin_id, 
                              tables=table, 
                              active_order=active_order,
+                             top_products=top_products,
                              menu=menu,
                              ingredients=ingredients,
+                             managers=managers,
+                             all_orders=all_orders,
+                             view_orders_list=view_orders_list,
+                             period=period,
                              action=action,
+                             message=message,
+                             search_query=search_query,
                              manage_item=False)
     except Exception as e:
         cursor.close()
@@ -288,7 +439,7 @@ def manage_item(admin_id, item_id):
                     mysql.connection.commit()
                     message = "Item deleted successfully"
                     cursor.close()
-                    return redirect(url_for('admin_dashboard', admin_id=admin_id, action='delete_menu', message=message))
+                    return redirect(url_for('admin_dashboard', admin_id=admin_id, action='delete_menu', message=message, clear='true'))
                 except Exception as e:
                     mysql.connection.rollback()
                     message = f"Error deleting item: {str(e)}"
@@ -300,51 +451,13 @@ def manage_item(admin_id, item_id):
                     mysql.connection.commit()
                     message = "Price changed successfully"
                     cursor.close()
-                    return redirect(url_for('admin_dashboard', admin_id=admin_id, action='change_price', message=message))
+                    return redirect(url_for('admin_dashboard', admin_id=admin_id, action='change_price', message=message, clear='true'))
                 except Exception as e:
                     mysql.connection.rollback()
                     message = f"Error changing price: {str(e)}"
             
-            elif action == 'update_stock':
-                # Get ingredients for this item
-                cursor.execute("""
-                    SELECT i.ing_id, i.name, i.quantity, i.unit, ii.quantity_needed
-                    FROM Ingredients i
-                    JOIN Item_ingredients ii ON i.ing_id = ii.ing_id
-                    WHERE ii.item_id = %s
-                """, (item_id,))
-                ingredients = cursor.fetchall()
-                
-                # Update each ingredient quantity
-                for ing in ingredients:
-                    ing_id = ing['ing_id']
-                    new_quantity = request.form.get(f'quantity_{ing_id}')
-                    if new_quantity:
-                        try:
-                            cursor.execute("UPDATE Ingredients SET quantity=%s WHERE ing_id=%s", (new_quantity, ing_id))
-                        except Exception as e:
-                            mysql.connection.rollback()
-                            message = f"Error updating stock: {str(e)}"
-                            cursor.close()
-                            return redirect(url_for('manage_item', admin_id=admin_id, item_id=item_id, action='update_stock', message=message))
-                
-                mysql.connection.commit()
-                message = "Stock updated successfully"
-                cursor.close()
-                return redirect(url_for('admin_dashboard', admin_id=admin_id, action='update_stock', message=message))
-        
         # GET request - show form
-        if action == 'update_stock':
-            # Get ingredients for this item
-            cursor.execute("""
-                SELECT i.ing_id, i.name, i.quantity, i.unit, ii.quantity_needed
-                FROM Ingredients i
-                JOIN Item_ingredients ii ON i.ing_id = ii.ing_id
-                WHERE ii.item_id = %s
-            """, (item_id,))
-            ingredients = cursor.fetchall()
-        else:
-            ingredients = []
+        ingredients = []
         
         cursor.close()
         return render_template('admin_dashboard.html',
@@ -415,16 +528,7 @@ def updatestock():
       cursor.close()
       return render_template('admin/update_stock.html',action='updatestock',ingredients=ingredients,message=message)
 
-@app.route('/admin/order',methods=['GET'])
-def view_order():
-    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute("""SELECT  o.*, t.status AS table_status FROM Orders o 
-                   JOIN Cafe_tables t ON o.table_no = t.table_no  
-                   WHERE o.status='active' 
-                   ORDER BY o.order_date, o.order_time""")
-    orders=cursor.fetchall()
-    cursor.close()
-    return render_template('admin/view_order.html',orders =orders)
+# Removed duplicate route - view_orders is now handled in admin_dashboard route
 
 @app.route('/admin/live_orders',methods=['GET'])
 def live_orders():
@@ -473,6 +577,18 @@ def confirm_payment(order_id):
             WHERE order_id=%s
         """, (order_id,))
         
+        # Clear comments from order details (temporary messages removed after order completion)
+        try:
+            cursor.execute("""
+                UPDATE Order_details 
+                SET comments = NULL 
+                WHERE order_id = %s
+            """, (order_id,))
+        except Exception as e:
+            # If comments column doesn't exist, ignore
+            if "comments" not in str(e).lower() and "unknown column" not in str(e).lower():
+                print(f"Error clearing comments: {str(e)}")
+        
         # Free the table
         cursor.execute("UPDATE Cafe_tables SET status='Free' WHERE table_no=%s", (order["table_no"],))
         
@@ -484,6 +600,237 @@ def confirm_payment(order_id):
     finally:
         cursor.close()
   
+
+@app.route('/admin/sales_analysis', methods=['GET'])
+def sales_analysis():
+    """Get sales analysis data for different time periods"""
+    period = request.args.get('period', 'today')  # today, week, month, last_month
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    
+    try:
+        if period == 'today':
+            cursor.execute("""
+                SELECT DATE(order_date) as date, 
+                       COALESCE(SUM(total_bill), 0) as revenue, 
+                       COUNT(*) as order_count
+                FROM Orders 
+                WHERE DATE(order_date) = CURDATE() 
+                AND (status = 'completed' OR status = 'active')
+                GROUP BY DATE(order_date)
+            """)
+        elif period == 'week':
+            cursor.execute("""
+                SELECT DATE(order_date) as date, 
+                       COALESCE(SUM(total_bill), 0) as revenue, 
+                       COUNT(*) as order_count
+                FROM Orders 
+                WHERE order_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) 
+                AND (status = 'completed' OR status = 'active')
+                GROUP BY DATE(order_date)
+                ORDER BY date
+            """)
+        elif period == 'month':
+            cursor.execute("""
+                SELECT DATE(order_date) as date, 
+                       COALESCE(SUM(total_bill), 0) as revenue, 
+                       COUNT(*) as order_count
+                FROM Orders 
+                WHERE MONTH(order_date) = MONTH(CURDATE()) 
+                AND YEAR(order_date) = YEAR(CURDATE())
+                AND (status = 'completed' OR status = 'active')
+                GROUP BY DATE(order_date)
+                ORDER BY date
+            """)
+        elif period == 'yesterday':
+            cursor.execute("""
+                SELECT DATE(order_date) as date, 
+                       COALESCE(SUM(total_bill), 0) as revenue, 
+                       COUNT(*) as order_count
+                FROM Orders 
+                WHERE DATE(order_date) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
+                AND (status = 'completed' OR status = 'active')
+                GROUP BY DATE(order_date)
+            """)
+        elif period == 'last_month':
+            cursor.execute("""
+                SELECT DATE(order_date) as date, 
+                       COALESCE(SUM(total_bill), 0) as revenue, 
+                       COUNT(*) as order_count
+                FROM Orders 
+                WHERE MONTH(order_date) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
+                AND YEAR(order_date) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
+                AND (status = 'completed' OR status = 'active')
+                GROUP BY DATE(order_date)
+                ORDER BY date
+            """)
+        elif period == '6months':
+            cursor.execute("""
+                SELECT DATE(order_date) as date, 
+                       COALESCE(SUM(total_bill), 0) as revenue, 
+                       COUNT(*) as order_count
+                FROM Orders 
+                WHERE order_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+                AND (status = 'completed' OR status = 'active')
+                GROUP BY DATE(order_date)
+                ORDER BY date
+            """)
+        
+        sales_data = cursor.fetchall()
+        
+        # Calculate total revenue
+        total_revenue = sum(float(row.get('revenue', 0) or 0) for row in sales_data)
+        total_orders = sum(int(row.get('order_count', 0) or 0) for row in sales_data)
+        
+        # Format dates for JSON
+        for row in sales_data:
+            if row.get('date'):
+                row['date'] = str(row['date'])
+            row['revenue'] = float(row.get('revenue', 0) or 0)
+            row['order_count'] = int(row.get('order_count', 0) or 0)
+        
+        return jsonify({
+            'period': period,
+            'total_revenue': total_revenue,
+            'total_orders': total_orders,
+            'data': sales_data
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+
+@app.route('/admin/most_selling_items', methods=['GET'])
+def most_selling_items():
+    """Get most selling items for different time periods"""
+    period = request.args.get('period', 'today')
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    
+    try:
+        date_filter = ""
+        if period == 'today':
+            date_filter = "AND DATE(o.order_date) = CURDATE()"
+        elif period == 'yesterday':
+            date_filter = "AND DATE(o.order_date) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)"
+        elif period == 'week':
+            date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"
+        elif period == 'month':
+            date_filter = "AND MONTH(o.order_date) = MONTH(CURDATE()) AND YEAR(o.order_date) = YEAR(CURDATE())"
+        elif period == 'last_month':
+            date_filter = "AND MONTH(o.order_date) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH)) AND YEAR(o.order_date) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))"
+        
+        cursor.execute(f"""
+            SELECT m.item_id, m.name, m.price,
+                   SUM(od.quantity) as total_quantity,
+                   COUNT(DISTINCT od.order_id) as order_count,
+                   SUM(od.quantity * m.price) as total_revenue
+            FROM Order_details od
+            JOIN Menu m ON od.item_id = m.item_id
+            JOIN Orders o ON od.order_id = o.order_id
+            WHERE (o.status = 'completed' OR o.status = 'active')
+            {date_filter}
+            GROUP BY m.item_id, m.name, m.price
+            ORDER BY total_quantity DESC
+            LIMIT 10
+        """)
+        
+        items = cursor.fetchall()
+        
+        # Format for JSON
+        for item in items:
+            item['total_quantity'] = int(item.get('total_quantity', 0) or 0)
+            item['order_count'] = int(item.get('order_count', 0) or 0)
+            item['total_revenue'] = float(item.get('total_revenue', 0) or 0)
+            item['price'] = float(item.get('price', 0) or 0)
+        
+        return jsonify({
+            'period': period,
+            'items': items
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+
+@app.route('/admin/daily_suggestions', methods=['GET'])
+def daily_suggestions():
+    """Get item suggestions based on previous same day of week"""
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    
+    try:
+        # Get current day of week (0=Monday, 6=Sunday)
+        cursor.execute("SELECT DAYOFWEEK(CURDATE()) - 1 as day_of_week")
+        current_dow = cursor.fetchone()['day_of_week']
+        
+        # Get most sold items on the same day of week in previous weeks
+        cursor.execute("""
+            SELECT m.item_id, m.name, SUM(od.quantity) as total_quantity, SUM(od.quantity * m.price) as total_revenue
+            FROM Order_details od
+            JOIN Menu m ON od.item_id = m.item_id
+            JOIN Orders o ON od.order_id = o.order_id
+            WHERE DAYOFWEEK(o.order_date) - 1 = %s
+            AND o.status = 'completed'
+            AND o.order_date < CURDATE()
+            GROUP BY m.item_id, m.name
+            ORDER BY total_quantity DESC
+            LIMIT 5
+        """, (current_dow,))
+        
+        suggestions = cursor.fetchall()
+        
+        # Format for JSON
+        for sug in suggestions:
+            sug['total_quantity'] = int(sug['total_quantity'] or 0)
+            sug['total_revenue'] = float(sug['total_revenue'] or 0)
+        
+        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        day_name = day_names[current_dow] if current_dow < len(day_names) else 'Unknown'
+        
+        return jsonify({
+            'day': day_name,
+            'suggestions': suggestions
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+
+@app.route('/admin/item_suggestions/<int:item_id>', methods=['GET'])
+def item_suggestions(item_id):
+    """Get items that are frequently ordered together with the given item"""
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    
+    try:
+        # Find items that are frequently ordered together
+        cursor.execute("""
+            SELECT m2.item_id, m2.name, m2.price, COUNT(*) as order_count
+            FROM Order_details od1
+            JOIN Order_details od2 ON od1.order_id = od2.order_id
+            JOIN Menu m2 ON od2.item_id = m2.item_id
+            WHERE od1.item_id = %s
+            AND od2.item_id != %s
+            AND od1.order_id IN (
+                SELECT order_id FROM Orders WHERE status = 'completed'
+            )
+            GROUP BY m2.item_id, m2.name, m2.price
+            ORDER BY order_count DESC
+            LIMIT 3
+        """, (item_id, item_id))
+        
+        suggestions = cursor.fetchall()
+        
+        # Format for JSON
+        for sug in suggestions:
+            sug['order_count'] = int(sug['order_count'] or 0)
+            sug['price'] = float(sug['price'] or 0)
+        
+        return jsonify({
+            'item_id': item_id,
+            'suggestions': suggestions
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
 
 @app.route('/logout')
 def logout(): 

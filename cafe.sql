@@ -59,3 +59,8 @@ CREATE TABLE Order_details(
     FOREIGN KEY (order_id) REFERENCES Orders(order_id) ON DELETE CASCADE,
     FOREIGN KEY (item_id) REFERENCES Menu(item_id) ON DELETE CASCADE
 );
+
+
+ALTER TABLE Order_details 
+ADD COLUMN comments VARCHAR(255) DEFAULT NULL 
+COMMENT 'Temporary customer notes/suggestions for the item (e.g., No ice, Extra sugar)';
