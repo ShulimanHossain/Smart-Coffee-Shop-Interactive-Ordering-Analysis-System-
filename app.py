@@ -19,6 +19,26 @@ def home():
                cursor.execute("""SELECT  item_id, name, price FROM Menu""")
                menu=cursor.fetchall()
                
+               # Get top 3 selling products
+               top_products = []
+               try:
+                   cursor.execute("""
+                       SELECT m.item_id, m.name, m.price,
+                              SUM(od.quantity) as total_sold
+                       FROM Order_details od
+                       JOIN Menu m ON od.item_id = m.item_id
+                       JOIN Orders o ON od.order_id = o.order_id
+                       WHERE o.status = 'completed'
+                       AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                       GROUP BY m.item_id, m.name, m.price
+                       ORDER BY total_sold DESC
+                       LIMIT 3
+                   """)
+                   top_products = cursor.fetchall()
+               except Exception as e:
+                   print(f"Error fetching top products: {str(e)}")
+                   top_products = []
+               
                previous_items = []
                locked_table_no = None
                if order_id:
@@ -165,10 +185,23 @@ def add_more_items(order_id):
 
 def update_stock_order_save(cursor, cart, order_id):
     for item in cart:
-        cursor.execute("""
-            INSERT INTO Order_details (order_id,item_id, quantity)
-            VALUES (%s, %s, %s)
-        """, (order_id, item["item_id"], item["quantity"]))
+        # Check if comments column exists in Order_details
+        comment = item.get("comment", "") or ""
+        try:
+            # Try to insert with comments if column exists
+            cursor.execute("""
+                INSERT INTO Order_details (order_id, item_id, quantity, comments)
+                VALUES (%s, %s, %s, %s)
+            """, (order_id, item["item_id"], item["quantity"], comment))
+        except Exception as e:
+            # If comments column doesn't exist, insert without it
+            if "comments" in str(e).lower() or "unknown column" in str(e).lower():
+                cursor.execute("""
+                    INSERT INTO Order_details (order_id, item_id, quantity)
+                    VALUES (%s, %s, %s)
+                """, (order_id, item["item_id"], item["quantity"]))
+            else:
+                raise
 
         cursor.execute("""
             SELECT ing_id, quantity_needed

@@ -301,6 +301,22 @@
                 </div>
                 {% endif %}
                 
+                <!-- Top 3 Selling Products -->
+                {% if top_products and top_products|length > 0 %}
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; margin-bottom: 25px;">
+                    <h2 style="margin-bottom: 15px; text-align: center;">🏆 Top Selling Products</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                        {% for product in top_products %}
+                        <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 8px; text-align: center;">
+                            <h3 style="margin: 0 0 10px 0;">{{ product.name }}</h3>
+                            <p style="margin: 5px 0; font-size: 1.2em; font-weight: bold;">${{ "%.2f"|format(product.price) }}</p>
+                            <p style="margin: 5px 0; font-size: 0.9em; opacity: 0.9;">{{ product.total_sold }} sold this month</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                
                 <div class="menu-container">
                     {% for item in menu %}
                     <div class="menu-item" id="menu-item-{{ item.item_id }}">
@@ -309,6 +325,14 @@
                         <div class="quantity-control">
                             <label>Quantity:</label>
                             <input type="number" id="qty_{{ item.item_id }}" value="1" min="1" style="width: 70px;">
+                        </div>
+                        <div style="margin: 10px 0;">
+                            <button type="button" onclick="toggleComment({{ item.item_id }})" style="padding: 5px 10px; background: #17a2b8; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 0.85em;">
+                                💬 Add Note
+                            </button>
+                        </div>
+                        <div id="comment-section-{{ item.item_id }}" style="display: none; margin: 10px 0;">
+                            <input type="text" id="comment-{{ item.item_id }}" placeholder="e.g., No ice, Extra sugar..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px; font-size: 0.9em;">
                         </div>
                         <button class="btn-add" 
                                 data-item-id="{{ item.item_id }}" 
@@ -383,13 +407,25 @@
             document.getElementById('table_no').value = lockedTableNo;
         }
 
+        function toggleComment(itemId) {
+            const commentSection = document.getElementById('comment-section-' + itemId);
+            commentSection.style.display = commentSection.style.display === 'none' ? 'block' : 'none';
+        }
+
         function addToCartFromButton(button) {
             const itemId = parseInt(button.getAttribute('data-item-id'));
             const name = button.getAttribute('data-item-name');
             const price = parseFloat(button.getAttribute('data-item-price'));
-            addToCart(itemId, name, price);
+            const commentInput = document.getElementById('comment-' + itemId);
+            const comment = commentInput ? commentInput.value.trim() : '';
+            addToCart(itemId, name, price, comment);
             // Load suggestions for this item
             loadItemSuggestions(itemId);
+            // Clear comment after adding
+            if (commentInput) {
+                commentInput.value = '';
+                document.getElementById('comment-section-' + itemId).style.display = 'none';
+            }
         }
 
         async function loadItemSuggestions(itemId) {
@@ -412,7 +448,7 @@
             }
         }
 
-        function addToCart(itemId, name, price) {
+        function addToCart(itemId, name, price, comment = '') {
             const qtyInput = document.getElementById('qty_' + itemId);
             const quantity = parseInt(qtyInput.value);
             
@@ -421,11 +457,12 @@
                 return;
             }
 
-            const existing = cart.find(item => item.item_id === itemId);
+            // Check if same item with same comment exists
+            const existing = cart.find(item => item.item_id === itemId && item.comment === comment);
             if (existing) {
                 existing.quantity += quantity;
             } else {
-                cart.push({ item_id: itemId, name: name, price: price, quantity: quantity });
+                cart.push({ item_id: itemId, name: name, price: price, quantity: quantity, comment: comment || '' });
             }
             
             qtyInput.value = 1; // Reset quantity
@@ -447,16 +484,27 @@
                 }
             } else {
                 cart.forEach((item, index) => {
-                    total += item.price * item.quantity;
+                    const itemTotal = item.price * item.quantity;
+                    total += itemTotal;
+                    
                     const cartItem = document.createElement('div');
                     cartItem.className = 'cart-item';
-                    cartItem.innerHTML = `
-                        <div class="cart-item-info">
-                            <div class="cart-item-name">${item.name}</div>
-                            <div class="cart-item-details">Qty: ${item.quantity} × $${item.price.toFixed(2)}</div>
+                    cartItem.style.cssText = 'padding: 15px; margin-bottom: 10px; background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);';
+                    
+                    let itemHtml = `
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                            <div style="flex: 1;">
+                                <strong>${item.name}</strong>
+                                ${item.comment ? `<br><span style="color: #856404; font-size: 0.85em; font-style: italic;">💬 "${item.comment}"</span>` : ''}
+                            </div>
+                            <button onclick="removeFromCart(${index})" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 0.8em;">Remove</button>
                         </div>
-                        <button class="btn-remove" onclick="removeFromCart(${index})">Remove</button>
+                        <div style="display: flex; justify-content: space-between; color: #666; font-size: 0.9em;">
+                            <span>Qty: ${item.quantity} x $${item.price.toFixed(2)}</span>
+                            <strong>$${itemTotal.toFixed(2)}</strong>
+                        </div>
                     `;
+                    cartItem.innerHTML = itemHtml;
                     list.appendChild(cartItem);
                 });
                 // Enable button if table is selected or locked

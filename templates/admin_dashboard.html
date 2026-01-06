@@ -25,6 +25,27 @@ body::before {
     z-index: -1;
 }
 
+/* Menu Toggle Button */
+.menu-toggle {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 1001;
+    background: #1f2937;
+    color: white;
+    border: none;
+    padding: 12px 15px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.2em;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    transition: all 0.3s;
+}
+.menu-toggle:hover {
+    background: #374151;
+    transform: scale(1.05);
+}
+
 /* Sidebar */
 .sidebar {
     position: fixed;
@@ -36,6 +57,11 @@ body::before {
     padding: 1rem;
     display: flex;
     flex-direction: column;
+    transition: transform 0.3s ease;
+    z-index: 1000;
+}
+.sidebar.hidden {
+    transform: translateX(-100%);
 }
 .sidebar h2 {
     color: #fff;
@@ -62,6 +88,10 @@ body::before {
     padding: 2rem;
     min-height: 100vh;
     background: rgba(255, 255, 255, 0.9);
+    transition: margin-left 0.3s ease;
+}
+.content.sidebar-hidden {
+    margin-left: 0;
 }
 h2.page-title {
     text-align: center;
@@ -206,7 +236,9 @@ input:focus, select:focus {
 </head>
 <body>
 
-<div class="sidebar">
+<button class="menu-toggle" onclick="toggleSidebar()" id="menu-toggle-btn">☰</button>
+
+<div class="sidebar" id="sidebar">
     <h2>{% if session.role == 'admin' %}Admin{% else %}Manager{% endif %} Panel</h2>
     <a href="?action=active" class="{% if action=='active' %}active{% endif %}">Active Orders</a>
     {% if session.role == 'admin' %}
@@ -250,9 +282,11 @@ input:focus, select:focus {
         <h3>Sales Analysis</h3>
         <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
             <button onclick="loadSalesAnalysis('today')" class="period-btn" id="btn-today">Today</button>
+            <button onclick="loadSalesAnalysis('yesterday')" class="period-btn" id="btn-yesterday">Yesterday</button>
             <button onclick="loadSalesAnalysis('week')" class="period-btn" id="btn-week">Last 7 Days</button>
             <button onclick="loadSalesAnalysis('month')" class="period-btn" id="btn-month">This Month</button>
             <button onclick="loadSalesAnalysis('last_month')" class="period-btn" id="btn-last-month">Last Month</button>
+            <button onclick="loadSalesAnalysis('6months')" class="period-btn" id="btn-6months">Last 6 Months</button>
         </div>
         <div id="sales-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
             <div style="background: #e3f2fd; padding: 15px; border-radius: 8px;">
@@ -346,6 +380,23 @@ input:focus, select:focus {
 
     <!-- Active Orders / Live Dashboard -->
     {% if action == 'active' %}
+    <!-- Top Selling Products (Manager/Admin) -->
+    {% if session.role in ['admin', 'manager'] and top_products %}
+    <div class="form-card" style="margin-bottom: 30px; background: #e8f5e9; border-left: 4px solid #4caf50;">
+        <h3>🏆 Top Selling Products (Last 30 Days)</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
+            {% for product in top_products %}
+            <div style="background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+                <h4 style="margin: 0 0 10px 0; color: #333;">{{ product.name }}</h4>
+                <p style="margin: 5px 0; color: #666; font-size: 0.9em;">Sold: <strong>{{ product.total_sold }}</strong></p>
+                <p style="margin: 5px 0; color: #666; font-size: 0.9em;">Orders: <strong>{{ product.order_count }}</strong></p>
+                <p style="margin: 5px 0; color: #4caf50; font-weight: bold;">${{ "%.2f"|format(product.price) }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     <div class="card-grid" id="orders-container">
         {% for order in active_order %}
         <div class="card {% if order.payment_status == 'pending' %}payment-pending{% endif %}">
@@ -367,6 +418,19 @@ input:focus, select:focus {
                     {{ order.payment_status|title if order.payment_status else 'Not Selected' }}
                 </span>
             </p>
+            {% endif %}
+            {% if order.items %}
+            <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 5px;">
+                <strong>Items:</strong>
+                {% for item in order.items %}
+                <p style="margin: 5px 0; font-size: 0.9em;">
+                    {{ item.item_name }} (x{{ item.quantity }})
+                    {% if item.comments %}
+                    <br><span style="color: #856404; font-style: italic;">💬 "{{ item.comments }}"</span>
+                    {% endif %}
+                </p>
+                {% endfor %}
+            </div>
             {% endif %}
             {% if order.order_date %}
             <p><strong>Date:</strong> {{ order.order_date }}</p>
@@ -819,14 +883,37 @@ input:focus, select:focus {
         console.log('Orders updated:', orders.length);
     }
 
+    // Sidebar Toggle Function
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const content = document.querySelector('.content');
+        const toggleBtn = document.getElementById('menu-toggle-btn');
+        
+        sidebar.classList.toggle('hidden');
+        content.classList.toggle('sidebar-hidden');
+        
+        // Update button icon
+        if (sidebar.classList.contains('hidden')) {
+            toggleBtn.innerHTML = '☰';
+            toggleBtn.style.left = '20px';
+        } else {
+            toggleBtn.innerHTML = '✕';
+            toggleBtn.style.left = '240px';
+        }
+    }
+
     // Sales Analysis Functions
     let salesChart = null;
     
     function loadSalesAnalysis(period) {
-        // Update button states
-        document.querySelectorAll('.period-btn').forEach(btn => {
-            btn.style.background = '#6c757d';
-            btn.classList.remove('active');
+        // Update button states for revenue buttons only
+        const revenueButtons = ['btn-today', 'btn-yesterday', 'btn-week', 'btn-month', 'btn-last-month', 'btn-6months'];
+        revenueButtons.forEach(btnId => {
+            const btn = document.getElementById(btnId);
+            if (btn) {
+                btn.style.background = '#6c757d';
+                btn.classList.remove('active');
+            }
         });
         const btnId = 'btn-' + period.replace('_', '-');
         const btn = document.getElementById(btnId);
@@ -947,17 +1034,82 @@ input:focus, select:focus {
             });
     }
 
+    // Most Selling Items Function
+    function loadMostSellingItems(period) {
+        // Update button states for items buttons only
+        const itemsButtons = ['btn-items-today', 'btn-items-yesterday', 'btn-items-week', 'btn-items-month', 'btn-items-last-month'];
+        itemsButtons.forEach(btnId => {
+            const btn = document.getElementById(btnId);
+            if (btn) {
+                btn.style.background = '#6c757d';
+                btn.classList.remove('active');
+            }
+        });
+        const btnId = 'btn-items-' + period.replace('_', '-');
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            btn.style.background = '#007bff';
+            btn.classList.add('active');
+        }
+        
+        fetch(`/admin/most_selling_items?period=${period}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('most-selling-items-container').innerHTML = 
+                        `<p style="color: #dc3545;">Error: ${data.error}</p>`;
+                    return;
+                }
+                
+                if (data.items && data.items.length > 0) {
+                    let html = '<div style="overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; margin-top: 15px;">';
+                    html += '<thead><tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">';
+                    html += '<th style="padding: 12px; text-align: left;">Rank</th>';
+                    html += '<th style="padding: 12px; text-align: left;">Item Name</th>';
+                    html += '<th style="padding: 12px; text-align: left;">Price</th>';
+                    html += '<th style="padding: 12px; text-align: left;">Quantity Sold</th>';
+                    html += '<th style="padding: 12px; text-align: left;">Orders</th>';
+                    html += '<th style="padding: 12px; text-align: left;">Revenue</th>';
+                    html += '</tr></thead><tbody>';
+                    
+                    data.items.forEach((item, index) => {
+                        html += '<tr style="border-bottom: 1px solid #dee2e6;">';
+                        html += `<td style="padding: 12px; font-weight: bold;">#${index + 1}</td>`;
+                        html += `<td style="padding: 12px;">${item.name}</td>`;
+                        html += `<td style="padding: 12px;">$${item.price.toFixed(2)}</td>`;
+                        html += `<td style="padding: 12px;">${item.total_quantity}</td>`;
+                        html += `<td style="padding: 12px;">${item.order_count}</td>`;
+                        html += `<td style="padding: 12px; color: #28a745; font-weight: bold;">$${item.total_revenue.toFixed(2)}</td>`;
+                        html += '</tr>';
+                    });
+                    
+                    html += '</tbody></table></div>';
+                    document.getElementById('most-selling-items-container').innerHTML = html;
+                } else {
+                    document.getElementById('most-selling-items-container').innerHTML = 
+                        '<p>No items found for the selected period.</p>';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading most selling items:', error);
+                document.getElementById('most-selling-items-container').innerHTML = 
+                    '<p style="color: #dc3545;">Error loading data</p>';
+            });
+    }
+
     // Initialize sales analysis on page load
     if (currentAction === 'sales_analysis') {
         // Wait for Chart.js to load
         if (typeof Chart !== 'undefined') {
             loadSalesAnalysis('today');
+            loadMostSellingItems('today');
             loadDailySuggestions();
         } else {
             // Wait a bit for Chart.js to load
             setTimeout(function() {
                 if (typeof Chart !== 'undefined') {
                     loadSalesAnalysis('today');
+                    loadMostSellingItems('today');
                     loadDailySuggestions();
                 } else {
                     console.error('Chart.js not loaded');

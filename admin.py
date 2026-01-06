@@ -164,6 +164,51 @@ def admin_dashboard(admin_id):
         """)
         active_order = cursor.fetchall()
         
+        # Get order details with comments for active orders
+        for order in active_order:
+            try:
+                # Try to get comments if column exists
+                cursor.execute("""
+                    SELECT od.*, m.name as item_name, COALESCE(od.comments, '') as comments
+                    FROM Order_details od
+                    JOIN Menu m ON od.item_id = m.item_id
+                    WHERE od.order_id = %s
+                """, (order['order_id'],))
+            except Exception as e:
+                # If comments column doesn't exist, get without it
+                if "comments" in str(e).lower() or "unknown column" in str(e).lower():
+                    cursor.execute("""
+                        SELECT od.*, m.name as item_name, '' as comments
+                        FROM Order_details od
+                        JOIN Menu m ON od.item_id = m.item_id
+                        WHERE od.order_id = %s
+                    """, (order['order_id'],))
+                else:
+                    raise
+            order['items'] = cursor.fetchall()
+        
+        # Get top selling products for manager/admin dashboard
+        top_products = []
+        if action == 'active' and user_role in ['admin', 'manager']:
+            try:
+                cursor.execute("""
+                    SELECT m.item_id, m.name, m.price,
+                           SUM(od.quantity) as total_sold,
+                           COUNT(DISTINCT od.order_id) as order_count
+                    FROM Order_details od
+                    JOIN Menu m ON od.item_id = m.item_id
+                    JOIN Orders o ON od.order_id = o.order_id
+                    WHERE o.status = 'completed'
+                    AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                    GROUP BY m.item_id, m.name, m.price
+                    ORDER BY total_sold DESC
+                    LIMIT 5
+                """)
+                top_products = cursor.fetchall()
+            except Exception as e:
+                print(f"Error fetching top products: {str(e)}")
+                top_products = []
+        
         # Fetch menu if needed for menu-related actions
         menu = []
         if action in ['view_menu', 'delete_menu', 'change_price']:
@@ -269,6 +314,7 @@ def admin_dashboard(admin_id):
                              admin_id=admin_id, 
                              tables=table, 
                              active_order=active_order,
+                             top_products=top_products,
                              menu=menu,
                              ingredients=ingredients,
                              managers=managers,
@@ -531,6 +577,18 @@ def confirm_payment(order_id):
             WHERE order_id=%s
         """, (order_id,))
         
+        # Clear comments from order details (temporary messages removed after order completion)
+        try:
+            cursor.execute("""
+                UPDATE Order_details 
+                SET comments = NULL 
+                WHERE order_id = %s
+            """, (order_id,))
+        except Exception as e:
+            # If comments column doesn't exist, ignore
+            if "comments" not in str(e).lower() and "unknown column" not in str(e).lower():
+                print(f"Error clearing comments: {str(e)}")
+        
         # Free the table
         cursor.execute("UPDATE Cafe_tables SET status='Free' WHERE table_no=%s", (order["table_no"],))
         
@@ -583,6 +641,16 @@ def sales_analysis():
                 GROUP BY DATE(order_date)
                 ORDER BY date
             """)
+        elif period == 'yesterday':
+            cursor.execute("""
+                SELECT DATE(order_date) as date, 
+                       COALESCE(SUM(total_bill), 0) as revenue, 
+                       COUNT(*) as order_count
+                FROM Orders 
+                WHERE DATE(order_date) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
+                AND (status = 'completed' OR status = 'active')
+                GROUP BY DATE(order_date)
+            """)
         elif period == 'last_month':
             cursor.execute("""
                 SELECT DATE(order_date) as date, 
@@ -591,6 +659,17 @@ def sales_analysis():
                 FROM Orders 
                 WHERE MONTH(order_date) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
                 AND YEAR(order_date) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
+                AND (status = 'completed' OR status = 'active')
+                GROUP BY DATE(order_date)
+                ORDER BY date
+            """)
+        elif period == '6months':
+            cursor.execute("""
+                SELECT DATE(order_date) as date, 
+                       COALESCE(SUM(total_bill), 0) as revenue, 
+                       COUNT(*) as order_count
+                FROM Orders 
+                WHERE order_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
                 AND (status = 'completed' OR status = 'active')
                 GROUP BY DATE(order_date)
                 ORDER BY date
@@ -614,6 +693,58 @@ def sales_analysis():
             'total_revenue': total_revenue,
             'total_orders': total_orders,
             'data': sales_data
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+
+@app.route('/admin/most_selling_items', methods=['GET'])
+def most_selling_items():
+    """Get most selling items for different time periods"""
+    period = request.args.get('period', 'today')
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    
+    try:
+        date_filter = ""
+        if period == 'today':
+            date_filter = "AND DATE(o.order_date) = CURDATE()"
+        elif period == 'yesterday':
+            date_filter = "AND DATE(o.order_date) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)"
+        elif period == 'week':
+            date_filter = "AND o.order_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"
+        elif period == 'month':
+            date_filter = "AND MONTH(o.order_date) = MONTH(CURDATE()) AND YEAR(o.order_date) = YEAR(CURDATE())"
+        elif period == 'last_month':
+            date_filter = "AND MONTH(o.order_date) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH)) AND YEAR(o.order_date) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))"
+        
+        cursor.execute(f"""
+            SELECT m.item_id, m.name, m.price,
+                   SUM(od.quantity) as total_quantity,
+                   COUNT(DISTINCT od.order_id) as order_count,
+                   SUM(od.quantity * m.price) as total_revenue
+            FROM Order_details od
+            JOIN Menu m ON od.item_id = m.item_id
+            JOIN Orders o ON od.order_id = o.order_id
+            WHERE (o.status = 'completed' OR o.status = 'active')
+            {date_filter}
+            GROUP BY m.item_id, m.name, m.price
+            ORDER BY total_quantity DESC
+            LIMIT 10
+        """)
+        
+        items = cursor.fetchall()
+        
+        # Format for JSON
+        for item in items:
+            item['total_quantity'] = int(item.get('total_quantity', 0) or 0)
+            item['order_count'] = int(item.get('order_count', 0) or 0)
+            item['total_revenue'] = float(item.get('total_revenue', 0) or 0)
+            item['price'] = float(item.get('price', 0) or 0)
+        
+        return jsonify({
+            'period': period,
+            'items': items
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
