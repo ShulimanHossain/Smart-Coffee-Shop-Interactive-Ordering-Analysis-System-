@@ -23,7 +23,9 @@ def check_role():
         'admin_dashboard': ['admin', 'manager'],
         'confirm_payment': ['admin','manager'],
         'live_orders': ['admin', 'manager'],
-        'create_user' : ['admin']
+        'create_user': ['admin'],
+        'sales_analysis': ['admin'],
+        'daily_suggestions': ['admin']
     }
 
     requested_function = request.endpoint

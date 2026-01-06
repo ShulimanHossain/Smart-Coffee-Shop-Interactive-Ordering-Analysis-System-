@@ -217,6 +217,7 @@ input:focus, select:focus {
     <a href="?action=change_price" class="{% if action=='change_price' %}active{% endif %}">Change Price</a>
     <a href="?action=sales_analysis" class="{% if action=='sales_analysis' %}active{% endif %}">Sales Analysis</a>
     <a href="?action=view_managers" class="{% if action=='view_managers' %}active{% endif %}">View Managers</a>
+    <a href="?action=create_user" class="{% if action=='create_user' %}active{% endif %}">Create User</a>
     {% endif %}
     {% if session.role in ['admin', 'manager'] %}
     <a href="?action=view_orders" class="{% if action=='view_orders' %}active{% endif %}">View Orders</a>
@@ -236,6 +237,7 @@ input:focus, select:focus {
         {% elif action=='sales_analysis' %}Sales Analysis
         {% elif action=='view_orders' %}Orders
         {% elif action=='view_managers' %}Manager Information
+        {% elif action=='create_user' %}Create User
         {% elif action=='change_password' %}Change Password
         {% endif %}
     </h2>
@@ -604,6 +606,34 @@ input:focus, select:focus {
     </script>
     {% endif %}
 
+    <!-- Create User Form (Admin Only) -->
+    {% if action == 'create_user' and session.role == 'admin' %}
+    <div class="form-card">
+        <h3>Create New User</h3>
+        <form id="create-user-form" method="POST" action="/create_user">
+            <label>Name</label>
+            <input type="text" name="name" required placeholder="Enter full name">
+            
+            <label>Email</label>
+            <input type="email" name="email" required placeholder="Enter email address">
+            
+            <label>Password</label>
+            <input type="password" name="password" required placeholder="Enter password" minlength="4">
+            
+            <label>Role</label>
+            <select name="role" required>
+                <option value="">-- Select Role --</option>
+                <option value="admin">Admin</option>
+                <option value="manager">Manager</option>
+                <option value="staff">Staff</option>
+            </select>
+            
+            <button type="submit" class="add-btn" style="margin-top: 15px;">Create User</button>
+        </form>
+        <div id="create-user-message" style="margin-top: 15px;"></div>
+    </div>
+    {% endif %}
+
     <!-- CHANGE PASSWORD FORM -->
     {% if action=='change_password' %}
     <div class="form-card">
@@ -788,6 +818,184 @@ input:focus, select:focus {
         // For now, we'll just log - full reload happens on payment confirmation
         console.log('Orders updated:', orders.length);
     }
+
+    // Sales Analysis Functions
+    let salesChart = null;
+    
+    function loadSalesAnalysis(period) {
+        // Update button states
+        document.querySelectorAll('.period-btn').forEach(btn => {
+            btn.style.background = '#6c757d';
+            btn.classList.remove('active');
+        });
+        const btnId = 'btn-' + period.replace('_', '-');
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            btn.style.background = '#007bff';
+            btn.classList.add('active');
+        }
+        
+        fetch(`/admin/sales_analysis?period=${period}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error('Error:', data.error);
+                    document.getElementById('total-revenue').textContent = '$0.00';
+                    document.getElementById('total-orders').textContent = '0';
+                    if (salesChart) {
+                        salesChart.destroy();
+                        salesChart = null;
+                    }
+                    return;
+                }
+                
+                // Update stats
+                document.getElementById('total-revenue').textContent = '$' + data.total_revenue.toFixed(2);
+                document.getElementById('total-orders').textContent = data.total_orders;
+                
+                // Update chart
+                updateSalesChart(data);
+            })
+            .catch(error => {
+                console.error('Error loading sales analysis:', error);
+                document.getElementById('total-revenue').textContent = '$0.00';
+                document.getElementById('total-orders').textContent = '0';
+            });
+    }
+
+    function updateSalesChart(data) {
+        const ctx = document.getElementById('sales-chart');
+        if (!ctx) {
+            console.error('Chart canvas not found');
+            return;
+        }
+        
+        const labels = data.data && data.data.length > 0 
+            ? data.data.map(d => {
+                const date = new Date(d.date);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            })
+            : ['No Data'];
+        const revenues = data.data && data.data.length > 0 
+            ? data.data.map(d => d.revenue)
+            : [0];
+        
+        if (salesChart) {
+            salesChart.destroy();
+        }
+        
+        salesChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Revenue ($)',
+                    data: revenues,
+                    borderColor: '#007bff',
+                    backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value.toFixed(2);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Load daily suggestions
+    function loadDailySuggestions() {
+        fetch('/admin/daily_suggestions')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('daily-suggestions').innerHTML = '<p>Error loading suggestions</p>';
+                    return;
+                }
+                
+                if (data.suggestions && data.suggestions.length > 0) {
+                    const topItem = data.suggestions[0];
+                    let html = `<p style="font-size: 1.1em; margin-bottom: 15px;"><strong>💡 Top seller on previous ${data.day}:</strong> <span style="color: #d32f2f;">${topItem.name}</span> (${topItem.total_quantity} orders)</p>`;
+                    html += '<p style="color: #666; margin-top: 10px;">Consider preparing extra stock for this item today!</p>';
+                    document.getElementById('daily-suggestions').innerHTML = html;
+                } else {
+                    document.getElementById('daily-suggestions').innerHTML = '<p>No historical data available for suggestions.</p>';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading daily suggestions:', error);
+                document.getElementById('daily-suggestions').innerHTML = '<p>Error loading suggestions</p>';
+            });
+    }
+
+    // Initialize sales analysis on page load
+    if (currentAction === 'sales_analysis') {
+        // Wait for Chart.js to load
+        if (typeof Chart !== 'undefined') {
+            loadSalesAnalysis('today');
+            loadDailySuggestions();
+        } else {
+            // Wait a bit for Chart.js to load
+            setTimeout(function() {
+                if (typeof Chart !== 'undefined') {
+                    loadSalesAnalysis('today');
+                    loadDailySuggestions();
+                } else {
+                    console.error('Chart.js not loaded');
+                }
+            }, 500);
+        }
+    }
+
+    // Handle create user form submission
+    const createUserForm = document.getElementById('create-user-form');
+    if (createUserForm) {
+        createUserForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const messageDiv = document.getElementById('create-user-message');
+            
+            fetch('/create_user', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    messageDiv.innerHTML = `<div style="color: #dc3545; padding: 10px; background: #f8d7da; border-radius: 5px;">Error: ${data.error}</div>`;
+                } else {
+                    messageDiv.innerHTML = `<div style="color: #155724; padding: 10px; background: #d4edda; border-radius: 5px;">
+                        <strong>Success!</strong> User created: ${data.user_code} (${data.user_role})<br>
+                        <small>User Code: ${data.user_code}</small>
+                    </div>`;
+                    createUserForm.reset();
+                }
+            })
+            .catch(error => {
+                messageDiv.innerHTML = `<div style="color: #dc3545; padding: 10px; background: #f8d7da; border-radius: 5px;">Error: ${error.message}</div>`;
+            });
+        });
+    }
 </script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 </body>
 </html>
