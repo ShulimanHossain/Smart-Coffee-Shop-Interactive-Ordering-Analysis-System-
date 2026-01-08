@@ -185,23 +185,10 @@ def add_more_items(order_id):
 
 def update_stock_order_save(cursor, cart, order_id):
     for item in cart:
-        # Check if comments column exists in Order_details
-        comment = item.get("comment", "") or ""
-        try:
-            # Try to insert with comments if column exists
-            cursor.execute("""
-                INSERT INTO Order_details (order_id, item_id, quantity, comments)
-                VALUES (%s, %s, %s, %s)
-            """, (order_id, item["item_id"], item["quantity"], comment))
-        except Exception as e:
-            # If comments column doesn't exist, insert without it
-            if "comments" in str(e).lower() or "unknown column" in str(e).lower():
-                cursor.execute("""
-                    INSERT INTO Order_details (order_id, item_id, quantity)
-                    VALUES (%s, %s, %s)
-                """, (order_id, item["item_id"], item["quantity"]))
-            else:
-                raise
+        cursor.execute("""
+            INSERT INTO Order_details (order_id, item_id, quantity)
+            VALUES (%s, %s, %s)
+        """, (order_id, item["item_id"], item["quantity"]))
 
         cursor.execute("""
             SELECT ing_id, quantity_needed
