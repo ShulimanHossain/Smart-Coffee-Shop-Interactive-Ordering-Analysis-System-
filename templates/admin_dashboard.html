@@ -425,9 +425,6 @@ input:focus, select:focus {
                 {% for item in order.items %}
                 <p style="margin: 5px 0; font-size: 0.9em;">
                     {{ item.item_name }} (x{{ item.quantity }})
-                    {% if item.comments %}
-                    <br><span style="color: #856404; font-style: italic;">💬 "{{ item.comments }}"</span>
-                    {% endif %}
                 </p>
                 {% endfor %}
             </div>

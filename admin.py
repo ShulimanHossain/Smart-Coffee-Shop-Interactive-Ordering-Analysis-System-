@@ -164,27 +164,14 @@ def admin_dashboard(admin_id):
         """)
         active_order = cursor.fetchall()
         
-        # Get order details with comments for active orders
+        # Get order details for active orders
         for order in active_order:
-            try:
-                # Try to get comments if column exists
-                cursor.execute("""
-                    SELECT od.*, m.name as item_name, COALESCE(od.comments, '') as comments
-                    FROM Order_details od
-                    JOIN Menu m ON od.item_id = m.item_id
-                    WHERE od.order_id = %s
-                """, (order['order_id'],))
-            except Exception as e:
-                # If comments column doesn't exist, get without it
-                if "comments" in str(e).lower() or "unknown column" in str(e).lower():
-                    cursor.execute("""
-                        SELECT od.*, m.name as item_name, '' as comments
-                        FROM Order_details od
-                        JOIN Menu m ON od.item_id = m.item_id
-                        WHERE od.order_id = %s
-                    """, (order['order_id'],))
-                else:
-                    raise
+            cursor.execute("""
+                SELECT od.*, m.name as item_name
+                FROM Order_details od
+                JOIN Menu m ON od.item_id = m.item_id
+                WHERE od.order_id = %s
+            """, (order['order_id'],))
             order['items'] = cursor.fetchall()
         
         # Get top selling products for manager/admin dashboard
@@ -576,18 +563,6 @@ def confirm_payment(order_id):
             SET payment_status='paid', status='completed' 
             WHERE order_id=%s
         """, (order_id,))
-        
-        # Clear comments from order details (temporary messages removed after order completion)
-        try:
-            cursor.execute("""
-                UPDATE Order_details 
-                SET comments = NULL 
-                WHERE order_id = %s
-            """, (order_id,))
-        except Exception as e:
-            # If comments column doesn't exist, ignore
-            if "comments" not in str(e).lower() and "unknown column" not in str(e).lower():
-                print(f"Error clearing comments: {str(e)}")
         
         # Free the table
         cursor.execute("UPDATE Cafe_tables SET status='Free' WHERE table_no=%s", (order["table_no"],))

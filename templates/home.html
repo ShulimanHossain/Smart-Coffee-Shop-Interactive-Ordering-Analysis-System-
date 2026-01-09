@@ -326,14 +326,7 @@
                             <label>Quantity:</label>
                             <input type="number" id="qty_{{ item.item_id }}" value="1" min="1" style="width: 70px;">
                         </div>
-                        <div style="margin: 10px 0;">
-                            <button type="button" class="btn-toggle-comment" data-item-id="{{ item.item_id }}" style="padding: 5px 10px; background: #17a2b8; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 0.85em;">
-                                💬 Add Note
-                            </button>
-                        </div>
-                        <div id="comment-section-{{ item.item_id }}" style="display: none; margin: 10px 0;">
-                            <input type="text" id="comment-{{ item.item_id }}" placeholder="e.g., No ice, Extra sugar..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px; font-size: 0.9em;">
-                        </div>
+
                         <button class="btn-add" 
                                 data-item-id="{{ item.item_id }}" 
                                 data-item-name="{{ item.name }}" 
@@ -407,27 +400,14 @@
             document.getElementById('table_no').value = lockedTableNo;
         }
 
-        function toggleComment(itemId) {
-            const commentSection = document.getElementById('comment-section-' + itemId);
-            commentSection.style.display = commentSection.style.display === 'none' ? 'block' : 'none';
-        }
-
         function addToCartFromButton(button) {
             const itemId = parseInt(button.getAttribute('data-item-id'));
             const name = button.getAttribute('data-item-name');
             const price = parseFloat(button.getAttribute('data-item-price'));
-            const commentInput = document.getElementById('comment-' + itemId);
-            const comment = commentInput ? commentInput.value.trim() : '';
-            addToCart(itemId, name, price, comment);
+            addToCart(itemId, name, price);
             // Load suggestions for this item
             loadItemSuggestions(itemId);
-            // Clear comment after adding
-            if (commentInput) {
-                commentInput.value = '';
-                document.getElementById('comment-section-' + itemId).style.display = 'none';
-            }
         }
-
         async function loadItemSuggestions(itemId) {
             try {
                 const response = await fetch(`/admin/item_suggestions/${itemId}`);
@@ -448,7 +428,7 @@
             }
         }
 
-        function addToCart(itemId, name, price, comment = '') {
+        function addToCart(itemId, name, price) {
             const qtyInput = document.getElementById('qty_' + itemId);
             const quantity = parseInt(qtyInput.value);
             
@@ -457,12 +437,12 @@
                 return;
             }
 
-            // Check if same item with same comment exists
-            const existing = cart.find(item => item.item_id === itemId && item.comment === comment);
+            // Check if same item exists
+            const existing = cart.find(item => item.item_id === itemId);
             if (existing) {
                 existing.quantity += quantity;
             } else {
-                cart.push({ item_id: itemId, name: name, price: price, quantity: quantity, comment: comment || '' });
+                cart.push({ item_id: itemId, name: name, price: price, quantity: quantity });
             }
             
             qtyInput.value = 1; // Reset quantity
@@ -495,7 +475,6 @@
                         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
                             <div style="flex: 1;">
                                 <strong>${item.name}</strong>
-                                ${item.comment ? `<br><span style="color: #856404; font-size: 0.85em; font-style: italic;">💬 "${item.comment}"</span>` : ''}
                             </div>
                             <button onclick="removeFromCart(${index})" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 0.8em;">Remove</button>
                         </div>
@@ -585,14 +564,6 @@
             if (!lockedTableNo) {
                 const placeBtn = document.getElementById('place-order-btn');
                 placeBtn.disabled = !this.value || cart.length === 0;
-            }
-        });
-
-        // Handle toggle comment button clicks using event delegation
-        document.addEventListener('click', function(e) {
-            if (e.target && e.target.classList.contains('btn-toggle-comment')) {
-                const itemId = parseInt(e.target.getAttribute('data-item-id'));
-                toggleComment(itemId);
             }
         });
     </script>
