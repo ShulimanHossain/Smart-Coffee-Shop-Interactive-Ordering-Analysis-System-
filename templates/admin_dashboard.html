@@ -419,10 +419,10 @@ input:focus, select:focus {
                 </span>
             </p>
             {% endif %}
-            {% if order.items %}
+            {% if order['items'] %}
             <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 5px;">
                 <strong>Items:</strong>
-                {% for item in order.items %}
+                {% for item in order['items'] %}
                 <p style="margin: 5px 0; font-size: 0.9em;">
                     {{ item.item_name }} (x{{ item.quantity }})
                 </p>
